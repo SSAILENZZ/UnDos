@@ -1,5 +1,90 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1f3a"><title>UnDos | Liceo Tecnológico Montemaria</title><link rel="stylesheet" href="/styles.css"></head><body>
-<section id="loginView" class="login-wrap"><div class="login-card"><div class="brand brand-login"><img src="/logo.png" alt="Liceo Tecnológico Montemaria"><div><strong>UnDos</strong><span>Gestión académica</span></div></div><div class="login-copy"><span class="eyebrow">Liceo Tecnológico Montemaria</span><h1>Tu información académica, clara y ordenada.</h1><p>Acceso para estudiantes, profesores y administración.</p></div><form id="loginForm" class="stack"><label>RUT<input id="rut" autocomplete="username" placeholder="12.345.678-5" required></label><label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Ingresar</button><p id="loginError" class="form-error" hidden></p></form></div></section>
-<div id="appView" class="app" hidden><aside class="sidebar"><div class="brand"><img src="/logo.png" alt="Logo del liceo"><div><strong>UnDos</strong><span>Montemaria</span></div></div><nav id="nav"></nav><div class="sidebar-foot"><div id="userMini" class="user-mini"></div><button id="logoutBtn" class="btn ghost full">Cerrar sesión</button></div></aside><main class="main"><header class="topbar"><div><span id="pageEyebrow" class="eyebrow"></span><h1 id="pageTitle">Inicio</h1></div><div id="topActions"></div></header><section id="content" class="content"></section></main></div>
-<dialog id="modal" class="modal"><div class="modal-shell"><div class="modal-head"><h2 id="modalTitle"></h2><button id="modalClose" type="button" class="icon-btn" aria-label="Cerrar">×</button></div><div id="modalBody"></div></div></dialog><div id="toast" class="toast" hidden></div>
-<script src="/core.js" defer></script><script src="/admin.js" defer></script><script src="/teacher.js" defer></script><script src="/student.js" defer></script></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a3760">
+  <title>UnDos | Liceo Tecnológico Montemaria</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="loginView" class="login-wrap">
+    <div class="login-card">
+      <div class="brand brand-login">
+        <img src="/logo.png" alt="Liceo Tecnológico Montemaria">
+        <div>
+          <strong>UnDos</strong>
+          <span>Liceo Tecnológico Montemaria · Gestión académica</span>
+        </div>
+      </div>
+
+      <div class="login-copy">
+        <span class="eyebrow">Liceo Tecnológico Montemaria</span>
+        <h1>Tu información académica, clara, simple y ordenada.</h1>
+        <p>
+          Plataforma académica para estudiantes, profesores y administración,
+          adaptada a la identidad del liceo.
+        </p>
+      </div>
+
+      <form id="loginForm" class="stack">
+        <label>RUT
+          <input id="rut" autocomplete="username" placeholder="12.345.678-5" required>
+        </label>
+        <label>Contraseña
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn primary" type="submit">Ingresar</button>
+        <p id="loginError" class="form-error" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <div id="appView" class="app" hidden>
+    <aside class="sidebar">
+      <div class="brand brand-sidebar">
+        <img src="/logo.png" alt="Logo del liceo">
+        <div>
+          <strong>UnDos</strong>
+          <span>Liceo Tecnológico Montemaria</span>
+        </div>
+      </div>
+
+      <nav id="nav"></nav>
+
+      <div class="sidebar-foot">
+        <div id="userMini" class="user-mini"></div>
+        <button id="logoutBtn" class="btn ghost full">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <span id="pageEyebrow" class="eyebrow"></span>
+          <h1 id="pageTitle">Inicio</h1>
+        </div>
+        <div id="topActions"></div>
+      </header>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+  <dialog id="modal" class="modal">
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2 id="modalTitle"></h2>
+        <button id="modalClose" type="button" class="icon-btn" aria-label="Cerrar">×</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/core.js" defer></script>
+  <script src="/admin.js" defer></script>
+  <script src="/teacher.js" defer></script>
+  <script src="/student.js" defer></script>
+</body>
+</html>
