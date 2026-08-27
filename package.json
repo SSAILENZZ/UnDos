@@ -1,12 +1,18 @@
 {
   "name": "undos",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Plataforma académica UnDos - maqueta inicial",
+  "description": "Plataforma académica UnDos para el Liceo Tecnológico Montemaria",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
   }
 }
