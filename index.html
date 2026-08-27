@@ -11,7 +11,9 @@
   <section id="loginView" class="login-wrap">
     <div class="login-card">
       <div class="brand brand-login">
-        <img src="/logo.png" alt="Liceo Tecnológico Montemaria">
+        <div class="logo-shell logo-shell-login">
+          <img src="/logo.png" alt="Liceo Tecnológico Montemaria">
+        </div>
         <div>
           <strong>UnDos</strong>
           <span>Liceo Tecnológico Montemaria · Gestión académica</span>
@@ -43,7 +45,9 @@
   <div id="appView" class="app" hidden>
     <aside class="sidebar">
       <div class="brand brand-sidebar">
-        <img src="/logo.png" alt="Logo del liceo">
+        <div class="logo-shell logo-shell-sidebar">
+          <img src="/logo.png" alt="Logo del liceo">
+        </div>
         <div>
           <strong>UnDos</strong>
           <span>Liceo Tecnológico Montemaria</span>
@@ -71,13 +75,13 @@
   </div>
 
   <dialog id="modal" class="modal">
-    <div class="modal-shell">
+    <form method="dialog" class="modal-shell">
       <div class="modal-head">
         <h2 id="modalTitle"></h2>
-        <button id="modalClose" type="button" class="icon-btn" aria-label="Cerrar">×</button>
+        <button value="cancel" class="icon-btn" aria-label="Cerrar">×</button>
       </div>
       <div id="modalBody"></div>
-    </div>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
