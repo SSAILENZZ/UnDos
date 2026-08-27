@@ -1,56 +1,6 @@
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-
-const PORT = process.env.PORT || 3000;
-const ROOT = __dirname;
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml; charset=utf-8',
-  '.json': 'application/json; charset=utf-8'
-};
-
-const server = http.createServer((req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end('ok');
-  }
-
-  let pathname = decodeURIComponent(req.url.split('?')[0]);
-  if (pathname === '/') pathname = '/index.html';
-
-  const filePath = path.normalize(path.join(ROOT, pathname));
-  if (!filePath.startsWith(ROOT)) {
-    res.writeHead(403);
-    return res.end('Forbidden');
-  }
-
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      fs.readFile(path.join(ROOT, 'index.html'), (indexErr, indexData) => {
-        if (indexErr) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          return res.end('No encontrado');
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-        res.end(indexData);
-      });
-      return;
-    }
-
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache'
-    });
-    res.end(data);
-  });
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`UnDos ejecutándose en el puerto ${PORT}`);
-});
+const express=require('express');const path=require('path');const {pool,initDatabase}=require('./db');
+const app=express(),PORT=Number(process.env.PORT||3000);app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:false}));app.use(express.static(__dirname,{maxAge:0,etag:false}));
+app.use('/api',require('./routes-auth'));app.use('/api/admin',require('./routes-admin'));app.use('/api/teacher',require('./routes-teacher'));app.use('/api/student',require('./routes-student'));
+app.get('/api/history',require('./auth').auth,async(_q,res)=>{try{const {rows}=await pool.query('SELECT id,year,active FROM academic_years ORDER BY year DESC');res.json({years:rows})}catch{res.status(500).json({error:'No se pudo cargar el historial'})}});
+app.get('/health',async(_q,res)=>{try{await pool.query('SELECT 1');res.send('ok')}catch{res.status(503).send('db unavailable')}});app.get('*',(_q,res)=>res.sendFile(path.join(__dirname,'index.html')));
+(async()=>{for(let i=1;i<=20;i++){try{await initDatabase();app.listen(PORT,'0.0.0.0',()=>console.log(`UnDos listo en puerto ${PORT}`));return}catch(e){console.error(`DB intento ${i}/20:`,e.message);if(i===20)process.exit(1);await new Promise(r=>setTimeout(r,3000))}}})();
