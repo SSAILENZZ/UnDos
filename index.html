@@ -4,15 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0a3760">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>UnDos | Liceo Tecnológico Montemaria</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=20260828-2">
 </head>
 <body>
   <section id="loginView" class="login-wrap">
     <div class="login-card">
       <div class="brand brand-login">
         <div class="logo-shell logo-shell-login">
-          <img src="/logo.png" alt="Liceo Tecnológico Montemaria">
+          <img src="/logo.png?v=20260828-2" alt="Liceo Tecnológico Montemaria">
         </div>
         <div>
           <strong>UnDos</strong>
@@ -23,21 +26,18 @@
       <div class="login-copy">
         <span class="eyebrow">Liceo Tecnológico Montemaria</span>
         <h1>Tu información académica, clara, simple y ordenada.</h1>
-        <p>
-          Plataforma académica para estudiantes, profesores y administración,
-          adaptada a la identidad del liceo.
-        </p>
+        <p>Plataforma académica para estudiantes, profesores y administración, adaptada a la identidad del liceo.</p>
       </div>
 
-      <form id="loginForm" class="stack">
+      <form id="loginForm" class="stack" novalidate>
         <label>RUT
-          <input id="rut" autocomplete="username" placeholder="12.345.678-5" required>
+          <input id="rut" autocomplete="username" inputmode="text" placeholder="12.345.678-5" required>
         </label>
         <label>Contraseña
           <input id="password" type="password" autocomplete="current-password" required>
         </label>
-        <button class="btn primary" type="submit">Ingresar</button>
-        <p id="loginError" class="form-error" hidden></p>
+        <button id="loginBtn" class="btn primary" type="submit">Ingresar</button>
+        <p id="loginError" class="form-error" role="alert" hidden></p>
       </form>
     </div>
   </section>
@@ -46,7 +46,7 @@
     <aside class="sidebar">
       <div class="brand brand-sidebar">
         <div class="logo-shell logo-shell-sidebar">
-          <img src="/logo.png" alt="Logo del liceo">
+          <img src="/logo.png?v=20260828-2" alt="Logo del liceo">
         </div>
         <div>
           <strong>UnDos</strong>
@@ -78,7 +78,7 @@
     <form method="dialog" class="modal-shell">
       <div class="modal-head">
         <h2 id="modalTitle"></h2>
-        <button value="cancel" class="icon-btn" aria-label="Cerrar">×</button>
+        <button id="modalClose" value="cancel" class="icon-btn" aria-label="Cerrar">×</button>
       </div>
       <div id="modalBody"></div>
     </form>
@@ -86,9 +86,9 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="/core.js" defer></script>
-  <script src="/admin.js" defer></script>
-  <script src="/teacher.js" defer></script>
-  <script src="/student.js" defer></script>
+  <script src="/core.js?v=20260828-2" defer></script>
+  <script src="/admin.js?v=20260828-2" defer></script>
+  <script src="/teacher.js?v=20260828-2" defer></script>
+  <script src="/student.js?v=20260828-2" defer></script>
 </body>
 </html>
