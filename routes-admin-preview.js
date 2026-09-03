@@ -8,6 +8,7 @@ async function activeRoleUser(id,role){
   const {rows}=await pool.query('SELECT id,rut,full_name,role,active FROM users WHERE id=$1 AND role=$2 AND active=TRUE',[Number(id),role]);
   return rows[0]||null;
 }
+function validDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!Number.isNaN(Date.parse(`${v}T00:00:00Z`))}
 
 r.get('/student/:id',async(req,res)=>{
   try{
@@ -72,10 +73,28 @@ r.get('/teacher/:teacherId/assignments/:assignmentId',async(req,res)=>{
       pool.query('SELECT id,name,eval_date,semester,weight::float,status FROM evaluations WHERE assignment_id=$1 ORDER BY semester,eval_date NULLS LAST,id',[a.id]),
       pool.query('SELECT g.evaluation_id,g.student_id,g.grade::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id WHERE ev.assignment_id=$1',[a.id])
     ]);
-    const coverage={1:0,2:0};
-    for(const ev of evals.rows)if(ev.status==='completed')coverage[ev.semester]+=Number(ev.weight);
+    const coverage={1:0,2:0};for(const ev of evals.rows)if(ev.status==='completed')coverage[ev.semester]+=Number(ev.weight);
     res.json({previewUser:{id:teacher.id,rut:teacher.rut,fullName:teacher.full_name,role:'teacher'},assignment:{id:a.id,subjectName:a.subject_name,courseName:a.course_name,year:a.year},students:students.rows.map(x=>({id:x.id,rut:x.rut,fullName:x.full_name})),evaluations:evals.rows.map(x=>({id:x.id,name:x.name,date:x.eval_date,semester:x.semester,weight:Number(x.weight),status:x.status})),grades:grades.rows.map(x=>({evaluationId:x.evaluation_id,studentId:x.student_id,grade:Number(x.grade)})),completedWeight:coverage});
   }catch(e){console.error(e);apiError(res,500,'No se pudo cargar la clase del profesor')}
+});
+
+r.get('/teacher/:teacherId/assignments/:assignmentId/attendance',async(req,res)=>{
+  try{
+    const teacher=await activeRoleUser(req.params.teacherId,'teacher');if(!teacher)return apiError(res,404,'Profesor no encontrado');
+    const q=await pool.query(`SELECT ta.id,ta.course_id,ta.academic_year_id,s.name subject_name,c.name course_name,ay.year
+      FROM teaching_assignments ta JOIN subjects s ON s.id=ta.subject_id JOIN courses c ON c.id=ta.course_id JOIN academic_years ay ON ay.id=ta.academic_year_id
+      WHERE ta.id=$1 AND ta.teacher_id=$2 AND ta.active=TRUE`,[Number(req.params.assignmentId),teacher.id]);
+    const a=q.rows[0];if(!a)return apiError(res,404,'Clase no encontrada');
+    const date=String(req.query.date||new Date().toISOString().slice(0,10));if(!validDate(date))return apiError(res,400,'Fecha inválida');
+    const [students,records,days]=await Promise.all([
+      pool.query(`SELECT u.id,u.rut,u.full_name FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.active=TRUE ORDER BY u.full_name`,[a.course_id,a.academic_year_id]),
+      pool.query('SELECT student_id,status FROM attendance_records WHERE assignment_id=$1 AND attendance_date=$2',[a.id,date]),
+      pool.query(`SELECT attendance_date::text date,COUNT(*) FILTER (WHERE status='present')::int present_count,COUNT(*) FILTER (WHERE status='absent')::int absent_count FROM attendance_records WHERE assignment_id=$1 GROUP BY attendance_date ORDER BY attendance_date DESC LIMIT 40`,[a.id])
+    ]);
+    const map=new Map(records.rows.map(x=>[x.student_id,x.status]));
+    const list=students.rows.map(x=>({id:x.id,rut:x.rut,fullName:x.full_name,status:map.get(x.id)||null}));
+    res.json({assignment:{id:a.id,subjectName:a.subject_name,courseName:a.course_name,year:a.year},date,students:list,summary:{present:list.filter(x=>x.status==='present').length,absent:list.filter(x=>x.status==='absent').length,unmarked:list.filter(x=>!x.status).length},days:days.rows.map(x=>({date:x.date,present:Number(x.present_count),absent:Number(x.absent_count)}))});
+  }catch(e){console.error(e);apiError(res,500,'No se pudo cargar la vista de asistencia')}
 });
 
 module.exports=r;
