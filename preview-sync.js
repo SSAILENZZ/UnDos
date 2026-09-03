@@ -1,0 +1,1 @@
+(()=>{const U=window.U,S=U.state;document.addEventListener('click',e=>{const exit=e.target.closest('#exitPreviewV2');if(!exit)return;e.preventDefault();e.stopPropagation();S.adminPreview=null;U.renderShell();U.navigate('admin-home')},true);})();
