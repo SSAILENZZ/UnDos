@@ -40,7 +40,7 @@ U.renderShell=()=>{
   let title='UnDos',nav=[];
   if(u.role==='admin'){
     title='Administración';
-    nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-academic','▦','Académico']];
+    nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-courses','▤','Cursos'],['admin-subjects','▦','Materias'],['admin-years','◷','Años escolares']];
   }else if(u.role==='teacher'){
     title='Profesor';
     nav=[['teacher-home','▦','Mis clases']];
@@ -60,7 +60,10 @@ U.navigate=async page=>{
   try{
     if(page==='admin-home')return U.renderAdminHome();
     if(page==='admin-users')return U.renderAdminUsers();
-    if(page==='admin-academic')return U.renderAdminAcademic();
+    if(page==='admin-courses')return U.renderAdminCourses();
+    if(page==='admin-subjects')return U.renderAdminSubjects();
+    if(page==='admin-years')return U.renderAdminYears();
+    if(page==='admin-academic')return U.renderAdminCourses?U.renderAdminCourses():U.renderAdminAcademic();
     if(page==='teacher-home')return U.renderTeacherHome();
     if(page.startsWith('teacher-class-'))return U.renderTeacherClass(Number(page.split('-').pop()));
     if(page==='student-home')return U.renderStudentHome();
