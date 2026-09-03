@@ -8,7 +8,7 @@ app.disable('x-powered-by');
 app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");next()});
 app.use(express.json({limit:'1mb'}));
 app.use(express.urlencoded({extended:false,limit:'1mb'}));
-const PUBLIC_FILES=new Set(['/styles.css','/polish.css','/teacher-polish.css','/core.js','/admin.js','/admin-enhancements.js','/admin-v2.js','/teacher.js','/student.js','/history.js','/attendance.js','/logo.png','/logo.svg']);
+const PUBLIC_FILES=new Set(['/styles.css','/polish.css','/teacher-polish.css','/core.js','/admin.js','/admin-enhancements.js','/admin-v2.js','/teacher.js','/student.js','/history.js','/attendance.js','/preview-sync.js','/logo.png','/logo.svg']);
 app.get([...PUBLIC_FILES],(req,res)=>{res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');res.setHeader('Pragma','no-cache');res.setHeader('Expires','0');res.sendFile(path.join(__dirname,req.path))});
 app.use('/api',require('./routes-auth'));
 app.use('/api/admin/preview',require('./routes-admin-preview'));
