@@ -1,0 +1,21 @@
+const express=require('express');
+const {pool,activeYear}=require('./db');
+const {apiError,auth,requireRole}=require('./auth');
+const r=express.Router();
+r.use(auth,requireRole('admin'));
+function validMonth(v){return /^\d{4}-\d{2}$/.test(String(v||''))&&!Number.isNaN(Date.parse(`${v}-01T00:00:00Z`))}
+function monthRange(month){const start=new Date(`${month}-01T00:00:00Z`),end=new Date(start);end.setUTCMonth(end.getUTCMonth()+1);return [start.toISOString().slice(0,10),end.toISOString().slice(0,10)]}
+async function ensureSchema(){await pool.query(`CREATE TABLE IF NOT EXISTS lesson_contents(id SERIAL PRIMARY KEY,assignment_id INTEGER NOT NULL REFERENCES teaching_assignments(id) ON DELETE CASCADE,content_date DATE NOT NULL,title TEXT NOT NULL,description TEXT,created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());CREATE INDEX IF NOT EXISTS idx_lesson_contents_assignment_date ON lesson_contents(assignment_id,content_date);`)}
+r.get('/teacher/:id/calendar',async(req,res)=>{
+  try{
+    await ensureSchema();const teacherId=Number(req.params.id),t=await pool.query("SELECT id,full_name,rut FROM users WHERE id=$1 AND role='teacher' AND active=TRUE",[teacherId]);if(!t.rows[0])return apiError(res,404,'Profesor no encontrado');
+    const y=await activeYear(),now=new Date(),fallback=`${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}`,month=validMonth(req.query.month)?String(req.query.month):fallback,[start,end]=monthRange(month);
+    const [assignments,evals,contents]=await Promise.all([
+      pool.query(`SELECT ta.id,ta.teacher_id,u.full_name teacher_name,ta.course_id,c.name course_name,ta.subject_id,s.name subject_name FROM teaching_assignments ta JOIN users u ON u.id=ta.teacher_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND u.active=TRUE AND c.active=TRUE AND s.active=TRUE ORDER BY u.full_name,c.level_order,c.name,s.name`,[y.id]),
+      pool.query(`SELECT ev.id,ev.assignment_id,ev.name,ev.eval_date::text date,ev.semester,ev.weight::float,ev.status,ta.teacher_id,u.full_name teacher_name,ta.course_id,c.name course_name,s.name subject_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN users u ON u.id=ta.teacher_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.eval_date >= $2 AND ev.eval_date < $3 ORDER BY ev.eval_date,c.level_order,c.name,s.name`,[y.id,start,end]),
+      pool.query(`SELECT lc.id,lc.assignment_id,lc.content_date::text date,lc.title,lc.description,ta.teacher_id,u.full_name teacher_name,ta.course_id,c.name course_name,s.name subject_name FROM lesson_contents lc JOIN teaching_assignments ta ON ta.id=lc.assignment_id JOIN users u ON u.id=ta.teacher_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND lc.content_date >= $2 AND lc.content_date < $3 ORDER BY lc.content_date,c.level_order,c.name,s.name`,[y.id,start,end])
+    ]);
+    res.json({previewUser:{id:teacherId,fullName:t.rows[0].full_name,rut:t.rows[0].rut,role:'teacher'},activeYear:y,month,rule:{maxEvaluationsPerCoursePerDay:2},assignments:assignments.rows.map(x=>({id:x.id,teacherId:x.teacher_id,teacherName:x.teacher_name,courseId:x.course_id,courseName:x.course_name,subjectId:x.subject_id,subjectName:x.subject_name,own:x.teacher_id===teacherId})),evaluations:evals.rows.map(x=>({id:x.id,assignmentId:x.assignment_id,name:x.name,date:x.date,semester:x.semester,weight:Number(x.weight),status:x.status,teacherId:x.teacher_id,teacherName:x.teacher_name,courseId:x.course_id,courseName:x.course_name,subjectName:x.subject_name,own:x.teacher_id===teacherId})),contents:contents.rows.map(x=>({id:x.id,assignmentId:x.assignment_id,date:x.date,title:x.title,description:x.description||'',teacherId:x.teacher_id,teacherName:x.teacher_name,courseId:x.course_id,courseName:x.course_name,subjectName:x.subject_name,own:x.teacher_id===teacherId}))});
+  }catch(e){console.error(e);apiError(res,500,'No se pudo cargar el calendario del profesor')}
+});
+module.exports=r;
