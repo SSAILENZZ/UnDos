@@ -1,21 +1,45 @@
 window.U={};const U=window.U;
 U.$=s=>document.querySelector(s);
-U.state={user:null,admin:null,teacher:null,currentAssignment:null,page:null};
+U.state={user:null,admin:null,teacher:null,currentAssignment:null,page:null,adminPreview:null,sessionExpired:false};
 U.roleLabel={student:'Estudiante',teacher:'Profesor',admin:'Administrador'};
 U.statusLabel={pending:'Pendiente',completed:'Realizada'};
 
+const stabilityStyle=document.createElement('style');
+stabilityStyle.textContent=`
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid rgba(7,55,90,.18);outline-offset:2px}
+.btn:disabled,button:disabled{opacity:.62;cursor:not-allowed}
+.table-wrap,.panel{overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.modal{max-height:min(90vh,760px);overflow:auto}
+.modal-body{min-width:0}
+.content,.main,.topbar,.top-actions{min-width:0}
+.nav-btn span:last-child{overflow:hidden;text-overflow:ellipsis}
+@media(max-width:920px){.sidebar{position:sticky;top:0;z-index:30}.sidebar nav{scrollbar-width:thin}.side-brand{display:none}.sidebar-foot{display:none}.topbar{top:66px;z-index:25}}
+@media(max-width:650px){.topbar{top:61px;flex-direction:column;gap:8px;align-items:stretch}.top-actions{width:100%;max-width:none;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.top-actions>*{flex:0 0 auto}.content{padding-top:20px}.toast{left:14px;right:14px;bottom:14px;text-align:center}.modal{width:calc(100% - 20px);max-height:92vh}.field input,.field select,.stack input,.stack select,.search,.semester{font-size:16px}}
+`;
+document.head.appendChild(stabilityStyle);
+
 U.api=async(url,options={})=>{
+  const controller=options.signal?null:new AbortController();
+  const timeout=controller?setTimeout(()=>controller.abort(),20000):null;
   const o={method:'GET',headers:{},credentials:'same-origin',cache:'no-store',...options};
+  if(controller)o.signal=controller.signal;
   if(o.body&&typeof o.body!=='string'){
     o.headers['Content-Type']='application/json';
     o.body=JSON.stringify(o.body);
   }
   let r;
-  try{r=await fetch(url,o)}catch{throw new Error('No se pudo conectar con el servidor. Inténtalo nuevamente.');}
+  try{r=await fetch(url,o)}catch(e){
+    if(e?.name==='AbortError')throw new Error('El servidor tardó demasiado en responder. Inténtalo nuevamente.');
+    throw new Error('No se pudo conectar con el servidor. Inténtalo nuevamente.');
+  }finally{if(timeout)clearTimeout(timeout)}
   const t=r.headers.get('content-type')||'';
   let d;
   try{d=t.includes('application/json')?await r.json():await r.text()}catch{d=''}
-  if(!r.ok)throw new Error(d?.error||d||'Ocurrió un error');
+  if(!r.ok){
+    const err=new Error(d?.error||d||'Ocurrió un error');err.status=r.status;
+    if(r.status===401&&U.state.user&&!String(url).startsWith('/api/auth/'))U.handleSessionExpired();
+    throw err;
+  }
   return d;
 };
 
@@ -25,30 +49,47 @@ U.fmtDate=v=>v?new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'2-digit',ye
 U.gradeText=s=>s?.status==='final'?Number(s.average).toFixed(1):'En proceso';
 U.initials=name=>String(name||'U').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
 
-U.toast=m=>{const e=U.$('#toast');if(!e)return;e.textContent=m;e.hidden=false;clearTimeout(U.toast.t);U.toast.t=setTimeout(()=>e.hidden=true,2800)};
+U.toast=m=>{const e=U.$('#toast');if(!e)return;e.textContent=String(m||'');e.hidden=false;clearTimeout(U.toast.t);U.toast.t=setTimeout(()=>e.hidden=true,3000)};
 U.setPage=(title,eyebrow='Liceo Tecnológico Montemaria',actions='')=>{const a=U.$('#pageTitle'),b=U.$('#pageEyebrow'),c=U.$('#topActions');if(a)a.textContent=title;if(b)b.textContent=eyebrow;if(c)c.innerHTML=actions};
-U.openModal=(title,html)=>{const a=U.$('#modalTitle'),b=U.$('#modalBody'),m=U.$('#modal');if(!a||!b||!m)return;a.textContent=title;b.innerHTML=`<div class="modal-body">${html}</div>`;m.showModal()};
+U.openModal=(title,html)=>{const a=U.$('#modalTitle'),b=U.$('#modalBody'),m=U.$('#modal');if(!a||!b||!m)return;a.textContent=title;b.innerHTML=`<div class="modal-body">${html}</div>`;if(!m.open)m.showModal()};
 U.closeModal=()=>{const m=U.$('#modal');if(m?.open)m.close()};
 const modalClose=U.$('#modalClose');if(modalClose)modalClose.onclick=U.closeModal;
+const modal=U.$('#modal');if(modal)modal.addEventListener('click',e=>{if(e.target===modal)U.closeModal()});
+
+U.resetToLogin=(message='')=>{
+  U.state.user=null;U.state.admin=null;U.state.teacher=null;U.state.currentAssignment=null;U.state.page=null;U.state.adminPreview=null;
+  const app=U.$('#appView'),login=U.$('#loginView'),pass=U.$('#password'),err=U.$('#loginError'),toggle=U.$('#togglePassword');
+  if(app)app.hidden=true;if(login)login.hidden=false;
+  if(pass){pass.value='';pass.type='password'}
+  if(toggle)toggle.textContent='Ver';
+  if(err){err.textContent=message;err.hidden=!message}
+};
+U.handleSessionExpired=()=>{
+  if(U.state.sessionExpired)return;
+  U.state.sessionExpired=true;
+  U.resetToLogin('Tu sesión expiró. Inicia sesión nuevamente.');
+  setTimeout(()=>{U.state.sessionExpired=false},1000);
+};
 
 U.renderShell=()=>{
   const login=U.$('#loginView'),app=U.$('#appView'),mini=U.$('#userMini'),navEl=U.$('#nav');
   if(!login||!app||!mini||!navEl)throw new Error('La interfaz no pudo cargarse correctamente.');
-  login.hidden=true;app.hidden=false;
   const u=U.state.user;
+  if(!u||!['admin','teacher','student'].includes(u.role))throw new Error('La cuenta no tiene un rol válido.');
+  login.hidden=true;app.hidden=false;
   mini.innerHTML=`<div class="avatar">${U.esc(U.initials(u.fullName))}</div><div class="user-copy"><strong>${U.esc(u.fullName)}</strong><span>${U.roleLabel[u.role]} · ${U.esc(U.fmtRut(u.rut))}</span></div>`;
   let title='UnDos',nav=[];
   if(u.role==='admin'){
     title='Administración';
-    nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-courses','▤','Cursos'],['admin-subjects','▦','Materias'],['admin-years','◷','Años escolares']];
+    nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-courses','▤','Cursos'],['admin-subjects','▦','Materias'],['admin-years','◷','Años escolares'],['admin-history','◫','Historial']];
   }else if(u.role==='teacher'){
     title='Profesor';
-    nav=[['teacher-home','▦','Mis clases']];
+    nav=[['teacher-home','▦','Mis clases'],['teacher-history','◷','Historial']];
   }else{
     title='Estudiante';
-    nav=[['student-home','⌂','Inicio']];
+    nav=[['student-home','⌂','Inicio'],['student-history','◷','Historial']];
   }
-  navEl.innerHTML=`<div class="nav-title">${title}</div>`+nav.map(([id,icon,label])=>`<button class="nav-btn" data-page="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
+  navEl.innerHTML=`<div class="nav-title">${title}</div>`+nav.map(([id,icon,label])=>`<button type="button" class="nav-btn" data-page="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
   navEl.onclick=e=>{const b=e.target.closest('[data-page]');if(b)U.navigate(b.dataset.page)};
 };
 
@@ -56,7 +97,7 @@ U.navigate=async page=>{
   U.state.page=page;
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
   const content=U.$('#content');if(!content)return;
-  content.innerHTML='<div class="card empty">Cargando…</div>';
+  content.innerHTML='<div class="card empty" aria-live="polite">Cargando…</div>';
   try{
     if(page==='admin-home')return U.renderAdminHome();
     if(page==='admin-users')return U.renderAdminUsers();
@@ -67,7 +108,9 @@ U.navigate=async page=>{
     if(page==='teacher-home')return U.renderTeacherHome();
     if(page.startsWith('teacher-class-'))return U.renderTeacherClass(Number(page.split('-').pop()));
     if(page==='student-home')return U.renderStudentHome();
-  }catch(e){content.innerHTML=`<div class="card"><h2>No se pudo cargar</h2><p class="form-error">${U.esc(e.message)}</p></div>`}
+    if(['student-history','teacher-history','admin-history'].includes(page))return;
+    throw new Error('La sección solicitada no existe.');
+  }catch(e){content.innerHTML=`<div class="card"><h2>No se pudo cargar</h2><p class="form-error">${U.esc(e.message)}</p><button type="button" class="btn ghost" id="retryPage">Reintentar</button></div>`;const retry=U.$('#retryPage');if(retry)retry.onclick=()=>U.navigate(page)}
 };
 
 U.showInitialAdmin=()=>{
@@ -100,14 +143,17 @@ if(loginForm)loginForm.onsubmit=async e=>{
   const original=btn?.textContent||'Ingresar';if(btn){btn.disabled=true;btn.textContent='Ingresando…'}
   try{
     const d=await U.api('/api/auth/login',{method:'POST',body:{rut:rut.value,password:pass.value}});
-    U.state.user=d.user;
+    U.state.user=d.user;U.state.sessionExpired=false;
     U.renderShell();
     await U.navigate(d.user.role==='admin'?'admin-home':d.user.role==='teacher'?'teacher-home':'student-home');
   }catch(ex){if(err){err.textContent=ex.message;err.hidden=false}}
   finally{if(btn){btn.disabled=false;btn.textContent=original}}
 };
 
-const logoutBtn=U.$('#logoutBtn');if(logoutBtn)logoutBtn.onclick=async()=>{try{await U.api('/api/auth/logout',{method:'POST'})}catch{}U.state.user=null;const app=U.$('#appView'),login=U.$('#loginView'),pass=U.$('#password');if(app)app.hidden=true;if(login)login.hidden=false;if(pass){pass.value='';pass.type='password'}if(togglePassword)togglePassword.textContent='Ver'};
+const logoutBtn=U.$('#logoutBtn');if(logoutBtn)logoutBtn.onclick=async()=>{try{await U.api('/api/auth/logout',{method:'POST'})}catch{}U.resetToLogin()};
+
+window.addEventListener('offline',()=>U.toast('Sin conexión a internet.'));
+window.addEventListener('online',()=>U.toast('Conexión restablecida.'));
 
 (async()=>{
   try{
