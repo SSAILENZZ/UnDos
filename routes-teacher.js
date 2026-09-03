@@ -13,6 +13,16 @@ async function getAssignment(req,id){
     WHERE ta.id=$1 AND ta.teacher_id=$2 AND ta.active=TRUE`,[id,req.user.id]);
   return rows[0]||null;
 }
+function validDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!Number.isNaN(Date.parse(`${v}T00:00:00Z`))}
+async function attendancePayload(a,date){
+  const [students,records]=await Promise.all([
+    pool.query(`SELECT u.id,u.rut,u.full_name FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.active=TRUE ORDER BY u.full_name`,[a.course_id,a.academic_year_id]),
+    pool.query('SELECT student_id,status FROM attendance_records WHERE assignment_id=$1 AND attendance_date=$2',[a.id,date])
+  ]);
+  const map=new Map(records.rows.map(x=>[x.student_id,x.status]));
+  const list=students.rows.map(x=>({id:x.id,rut:x.rut,fullName:x.full_name,status:map.get(x.id)||null}));
+  return {assignment:{id:a.id,subjectName:a.subject_name,courseName:a.course_name,year:a.year},date,students:list,summary:{present:list.filter(x=>x.status==='present').length,absent:list.filter(x=>x.status==='absent').length,unmarked:list.filter(x=>!x.status).length}};
+}
 
 r.get('/assignments',async(req,res)=>{
   try{
@@ -39,12 +49,7 @@ r.get('/catalog',async(req,res)=>{
       pool.query('SELECT id,name FROM subjects WHERE active=TRUE ORDER BY name'),
       pool.query('SELECT course_id,subject_id FROM teaching_assignments WHERE teacher_id=$1 AND academic_year_id=$2 AND active=TRUE',[req.user.id,y.id])
     ]);
-    res.json({
-      activeYear:y,
-      courses:courses.rows.map(x=>({id:x.id,name:x.name,studentCount:x.student_count})),
-      subjects:subjects.rows.map(x=>({id:x.id,name:x.name})),
-      assigned:assigned.rows.map(x=>({courseId:x.course_id,subjectId:x.subject_id}))
-    });
+    res.json({activeYear:y,courses:courses.rows.map(x=>({id:x.id,name:x.name,studentCount:x.student_count})),subjects:subjects.rows.map(x=>({id:x.id,name:x.name})),assigned:assigned.rows.map(x=>({courseId:x.course_id,subjectId:x.subject_id}))});
   }catch(e){console.error(e);apiError(res,500,'No se pudieron cargar los cursos y materias disponibles')}
 });
 
@@ -80,6 +85,49 @@ r.get('/assignments/:id',async(req,res)=>{
     for(const ev of evals.rows)if(ev.status==='completed')coverage[ev.semester]+=Number(ev.weight);
     res.json({assignment:{id:a.id,subjectName:a.subject_name,courseName:a.course_name,year:a.year},students:students.rows.map(x=>({id:x.id,rut:x.rut,fullName:x.full_name})),evaluations:evals.rows.map(x=>({id:x.id,name:x.name,date:x.eval_date,semester:x.semester,weight:Number(x.weight),status:x.status})),grades:grades.rows.map(x=>({evaluationId:x.evaluation_id,studentId:x.student_id,grade:Number(x.grade)})),completedWeight:coverage});
   }catch(e){console.error(e);apiError(res,500,'No se pudo cargar el libro de clases')}
+});
+
+r.get('/assignments/:id/attendance/dates',async(req,res)=>{
+  try{
+    const a=await getAssignment(req,Number(req.params.id));if(!a)return apiError(res,404,'Clase no encontrada');
+    const {rows}=await pool.query(`SELECT attendance_date::text date,
+      COUNT(*) FILTER (WHERE status='present')::int present_count,
+      COUNT(*) FILTER (WHERE status='absent')::int absent_count
+      FROM attendance_records WHERE assignment_id=$1 GROUP BY attendance_date ORDER BY attendance_date DESC LIMIT 40`,[a.id]);
+    res.json({days:rows.map(x=>({date:x.date,present:Number(x.present_count),absent:Number(x.absent_count)}))});
+  }catch(e){console.error(e);apiError(res,500,'No se pudo cargar el historial de asistencia')}
+});
+
+r.get('/assignments/:id/attendance',async(req,res)=>{
+  try{
+    const a=await getAssignment(req,Number(req.params.id));if(!a)return apiError(res,404,'Clase no encontrada');
+    const date=String(req.query.date||new Date().toISOString().slice(0,10));if(!validDate(date))return apiError(res,400,'Fecha inválida');
+    res.json(await attendancePayload(a,date));
+  }catch(e){console.error(e);apiError(res,500,'No se pudo cargar la asistencia')}
+});
+
+r.post('/assignments/:id/attendance',async(req,res)=>{
+  const c=await pool.connect();
+  try{
+    const a=await getAssignment(req,Number(req.params.id));if(!a)return apiError(res,404,'Clase no encontrada');
+    const date=String(req.body.date||'');if(!validDate(date))return apiError(res,400,'Fecha inválida');
+    const records=Array.isArray(req.body.records)?req.body.records:[];if(!records.length)return apiError(res,400,'No hay registros de asistencia');
+    await c.query('BEGIN');
+    for(const item of records){
+      const studentId=Number(item.studentId),status=item.status==null?null:String(item.status);
+      if(!Number.isInteger(studentId)||!['present','absent',null].includes(status))throw new Error('Registro inválido');
+      const en=await c.query('SELECT 1 FROM enrollments WHERE student_id=$1 AND course_id=$2 AND academic_year_id=$3',[studentId,a.course_id,a.academic_year_id]);
+      if(!en.rows[0])throw new Error('Estudiante fuera del curso');
+      if(status===null)await c.query('DELETE FROM attendance_records WHERE assignment_id=$1 AND student_id=$2 AND attendance_date=$3',[a.id,studentId,date]);
+      else await c.query(`INSERT INTO attendance_records(assignment_id,student_id,attendance_date,status,recorded_by)
+        VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT(assignment_id,student_id,attendance_date)
+        DO UPDATE SET status=EXCLUDED.status,recorded_by=EXCLUDED.recorded_by,updated_at=NOW()`,[a.id,studentId,date,status,req.user.id]);
+    }
+    await c.query('COMMIT');
+    res.json(await attendancePayload(a,date));
+  }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,400,e.message==='Registro inválido'?'Registro de asistencia inválido':e.message==='Estudiante fuera del curso'?'El estudiante no pertenece a este curso':'No se pudo guardar la asistencia')}
+  finally{c.release()}
 });
 
 r.post('/assignments/:id/evaluations',async(req,res)=>{
@@ -126,10 +174,8 @@ r.post('/evaluations/:id/grades',async(req,res)=>{
       }
     }
     await c.query('COMMIT');res.json({ok:true});
-  }catch(e){
-    await c.query('ROLLBACK').catch(()=>{});console.error(e);
-    apiError(res,400,e.message==='Nota inválida'?'Las notas deben estar entre 2.0 y 7.0 con un decimal':'No se pudieron guardar las notas');
-  }finally{c.release()}
+  }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,400,e.message==='Nota inválida'?'Las notas deben estar entre 2.0 y 7.0 con un decimal':'No se pudieron guardar las notas')}
+  finally{c.release()}
 });
 
 module.exports=r;
