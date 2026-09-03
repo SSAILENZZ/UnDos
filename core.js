@@ -13,7 +13,8 @@ U.api=async(url,options={})=>{
   let r;
   try{r=await fetch(url,o)}catch{throw new Error('No se pudo conectar con el servidor. Inténtalo nuevamente.');}
   const t=r.headers.get('content-type')||'';
-  const d=t.includes('application/json')?await r.json():await r.text();
+  let d;
+  try{d=t.includes('application/json')?await r.json():await r.text()}catch{d=''}
   if(!r.ok)throw new Error(d?.error||d||'Ocurrió un error');
   return d;
 };
@@ -22,9 +23,10 @@ U.esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;
 U.fmtRut=r=>{const [b,d]=String(r||'').split('-');return b&&d?`${Number(b).toLocaleString('es-CL')}-${d}`:r};
 U.fmtDate=v=>v?new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}).format(new Date(v)):'Sin fecha';
 U.gradeText=s=>s?.status==='final'?Number(s.average).toFixed(1):'En proceso';
+U.initials=name=>String(name||'U').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
 
 U.toast=m=>{const e=U.$('#toast');if(!e)return;e.textContent=m;e.hidden=false;clearTimeout(U.toast.t);U.toast.t=setTimeout(()=>e.hidden=true,2800)};
-U.setPage=(title,eyebrow='UnDos',actions='')=>{const a=U.$('#pageTitle'),b=U.$('#pageEyebrow'),c=U.$('#topActions');if(a)a.textContent=title;if(b)b.textContent=eyebrow;if(c)c.innerHTML=actions};
+U.setPage=(title,eyebrow='Liceo Tecnológico Montemaria',actions='')=>{const a=U.$('#pageTitle'),b=U.$('#pageEyebrow'),c=U.$('#topActions');if(a)a.textContent=title;if(b)b.textContent=eyebrow;if(c)c.innerHTML=actions};
 U.openModal=(title,html)=>{const a=U.$('#modalTitle'),b=U.$('#modalBody'),m=U.$('#modal');if(!a||!b||!m)return;a.textContent=title;b.innerHTML=`<div class="modal-body">${html}</div>`;m.showModal()};
 U.closeModal=()=>{const m=U.$('#modal');if(m?.open)m.close()};
 const modalClose=U.$('#modalClose');if(modalClose)modalClose.onclick=U.closeModal;
@@ -34,9 +36,19 @@ U.renderShell=()=>{
   if(!login||!app||!mini||!navEl)throw new Error('La interfaz no pudo cargarse correctamente.');
   login.hidden=true;app.hidden=false;
   const u=U.state.user;
-  mini.innerHTML=`<strong>${U.esc(u.fullName)}</strong><span>${U.roleLabel[u.role]} · ${U.esc(U.fmtRut(u.rut))}</span>`;
-  const nav=u.role==='admin'?[['admin-home','Resumen'],['admin-users','Usuarios'],['admin-academic','Académico']]:u.role==='teacher'?[['teacher-home','Mis clases']]:[['student-home','Mis notas']];
-  navEl.innerHTML=nav.map(([id,l])=>`<button class="nav-btn" data-page="${id}">${l}</button>`).join('');
+  mini.innerHTML=`<div class="avatar">${U.esc(U.initials(u.fullName))}</div><div class="user-copy"><strong>${U.esc(u.fullName)}</strong><span>${U.roleLabel[u.role]} · ${U.esc(U.fmtRut(u.rut))}</span></div>`;
+  let title='UnDos',nav=[];
+  if(u.role==='admin'){
+    title='Administración';
+    nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-academic','▦','Académico']];
+  }else if(u.role==='teacher'){
+    title='Docencia';
+    nav=[['teacher-home','▦','Mis clases']];
+  }else{
+    title='Estudiante';
+    nav=[['student-home','▤','Mis notas']];
+  }
+  navEl.innerHTML=`<div class="nav-title">${title}</div>`+nav.map(([id,icon,label])=>`<button class="nav-btn" data-page="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
   navEl.onclick=e=>{const b=e.target.closest('[data-page]');if(b)U.navigate(b.dataset.page)};
 };
 
@@ -56,7 +68,7 @@ U.navigate=async page=>{
 };
 
 U.showInitialAdmin=()=>{
-  U.openModal('Administrador inicial',`<form id="setupAdminForm" class="stack"><label class="field">Código de configuración<input name="setupCode" autocomplete="off" required></label><label class="field">Nombre completo<input name="fullName" required></label><label class="field">RUT<input name="rut" placeholder="12.345.678-5" required></label><label class="field">Contraseña<input name="password" type="password" minlength="8" required></label><p class="muted">Esta cuenta tendrá control administrativo del sistema. El código solo sirve para crear el primer administrador.</p><div class="form-actions"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn primary">Crear y entrar</button></div></form>`);
+  U.openModal('Administrador inicial',`<form id="setupAdminForm" class="stack"><div class="field"><label>Código de configuración</label><input name="setupCode" autocomplete="off" required></div><div class="field"><label>Nombre completo</label><input name="fullName" required></div><div class="field"><label>RUT</label><input name="rut" placeholder="12.345.678-5" required></div><div class="field"><label>Contraseña</label><input name="password" type="password" minlength="8" required></div><p class="muted">Esta cuenta tendrá control administrativo del sistema. El código solo sirve para crear el primer administrador.</p><div class="form-actions"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn primary">Crear y entrar</button></div></form>`);
   const f=U.$('#setupAdminForm');if(!f)return;
   f.onsubmit=async e=>{e.preventDefault();const x=new FormData(f);try{const d=await U.api('/api/setup/admin',{method:'POST',body:{setupCode:x.get('setupCode'),fullName:x.get('fullName'),rut:x.get('rut'),password:x.get('password')}});U.closeModal();U.state.user=d.user;U.renderShell();U.navigate('admin-home')}catch(err){U.toast(err.message)}};
   const c=U.$('[data-close]');if(c)c.onclick=U.closeModal;
@@ -67,11 +79,14 @@ U.checkSetup=async()=>{
     const s=await U.api('/api/setup/status');if(!s.needsSetup)return;
     const old=U.$('#setupInitial');if(old)old.remove();
     const form=U.$('#loginForm');if(!form)return;
-    const box=document.createElement('div');box.id='setupInitial';box.className='card';box.style.padding='14px';
+    const box=document.createElement('div');box.id='setupInitial';box.className='card';box.style.marginTop='18px';
     box.innerHTML='<strong>Primera configuración</strong><p class="muted" style="margin:5px 0 10px">Aún no existe un administrador.</p><button id="setupAdminBtn" type="button" class="btn secondary full">Crear administrador inicial</button>';
     form.appendChild(box);const b=U.$('#setupAdminBtn');if(b)b.onclick=U.showInitialAdmin;
   }catch{}
 };
+
+const togglePassword=U.$('#togglePassword');
+if(togglePassword)togglePassword.onclick=()=>{const p=U.$('#password');if(!p)return;const show=p.type==='password';p.type=show?'text':'password';togglePassword.textContent=show?'Ocultar':'Ver';togglePassword.setAttribute('aria-label',show?'Ocultar contraseña':'Mostrar contraseña')};
 
 const loginForm=U.$('#loginForm');
 if(loginForm)loginForm.onsubmit=async e=>{
@@ -89,7 +104,7 @@ if(loginForm)loginForm.onsubmit=async e=>{
   finally{if(btn){btn.disabled=false;btn.textContent=original}}
 };
 
-const logoutBtn=U.$('#logoutBtn');if(logoutBtn)logoutBtn.onclick=async()=>{try{await U.api('/api/auth/logout',{method:'POST'})}catch{}U.state.user=null;const app=U.$('#appView'),login=U.$('#loginView'),pass=U.$('#password');if(app)app.hidden=true;if(login)login.hidden=false;if(pass)pass.value=''};
+const logoutBtn=U.$('#logoutBtn');if(logoutBtn)logoutBtn.onclick=async()=>{try{await U.api('/api/auth/logout',{method:'POST'})}catch{}U.state.user=null;const app=U.$('#appView'),login=U.$('#loginView'),pass=U.$('#password');if(app)app.hidden=true;if(login)login.hidden=false;if(pass){pass.value='';pass.type='password'}if(togglePassword)togglePassword.textContent='Ver'};
 
 (async()=>{
   try{
