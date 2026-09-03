@@ -34,10 +34,13 @@ CREATE TABLE IF NOT EXISTS enrollments(id SERIAL PRIMARY KEY,student_id INTEGER 
 CREATE TABLE IF NOT EXISTS teaching_assignments(id SERIAL PRIMARY KEY,teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,active BOOLEAN NOT NULL DEFAULT TRUE,UNIQUE(teacher_id,subject_id,course_id,academic_year_id));
 CREATE TABLE IF NOT EXISTS evaluations(id SERIAL PRIMARY KEY,assignment_id INTEGER NOT NULL REFERENCES teaching_assignments(id) ON DELETE CASCADE,name TEXT NOT NULL,eval_date DATE,semester INTEGER NOT NULL CHECK(semester IN (1,2)),weight NUMERIC(5,2) NOT NULL CHECK(weight>0 AND weight<=100),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed')),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS grades(id SERIAL PRIMARY KEY,evaluation_id INTEGER NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,grade NUMERIC(3,1) NOT NULL CHECK(grade>=2.0 AND grade<=7.0),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(evaluation_id,student_id));
+CREATE TABLE IF NOT EXISTS attendance_records(id SERIAL PRIMARY KEY,assignment_id INTEGER NOT NULL REFERENCES teaching_assignments(id) ON DELETE CASCADE,student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,attendance_date DATE NOT NULL,status TEXT NOT NULL CHECK(status IN ('present','absent')),recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(assignment_id,student_id,attendance_date));
 CREATE INDEX IF NOT EXISTS idx_enrollments_year_course ON enrollments(academic_year_id,course_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_teacher_year ON teaching_assignments(teacher_id,academic_year_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_assignment ON evaluations(assignment_id);
-CREATE INDEX IF NOT EXISTS idx_grades_eval_student ON grades(evaluation_id,student_id);`);
+CREATE INDEX IF NOT EXISTS idx_grades_eval_student ON grades(evaluation_id,student_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_assignment_date ON attendance_records(assignment_id,attendance_date);
+CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance_records(student_id,attendance_date);`);
   const yearNum=new Date().getFullYear();
   await pool.query('INSERT INTO academic_years(year,active) VALUES($1,TRUE) ON CONFLICT(year) DO NOTHING',[yearNum]);
   const anyActive=await pool.query('SELECT 1 FROM academic_years WHERE active=TRUE LIMIT 1');if(!anyActive.rows[0])await pool.query('UPDATE academic_years SET active=(year=$1)',[yearNum]);
