@@ -19,26 +19,92 @@ U.renderTeacherHome=async()=>{
   S.teacher=d;
   const studentTotal=d.assignments.reduce((n,a)=>n+Number(a.studentCount||0),0);
   const evalTotal=d.assignments.reduce((n,a)=>n+Number(a.evaluationCount||0),0);
-  U.setPage('Panel del profesor',`Año escolar ${d.activeYear.year}`);
+  const courseTotal=new Set(d.assignments.map(a=>a.courseName)).size;
+  const subjectTotal=new Set(d.assignments.map(a=>a.subjectName)).size;
+  U.setPage('Panel del profesor',`Año escolar ${d.activeYear.year}`,'<button id="addTeacherClass" class="btn primary">+ Agregar curso / materia</button>');
   $('#content').innerHTML=`
-    <div class="welcome">
-      <div><h1>Hola, ${U.esc((S.user?.fullName||'Profesor').split(' ')[0])} 👋</h1><p>Administra tus cursos, evaluaciones y notas.</p></div>
+    <section class="teacher-hero">
+      <div class="teacher-hero-copy">
+        <span class="teacher-kicker">Tu espacio docente</span>
+        <h1>Hola, ${U.esc((S.user?.fullName||'Profesor').split(' ')[0])} 👋</h1>
+        <p>Organiza tus cursos, materias, evaluaciones y notas desde un solo lugar.</p>
+      </div>
+      <button id="teacherHeroAdd" type="button" class="teacher-add-card">
+        <span class="teacher-add-icon">+</span>
+        <span><strong>Agregar curso y materia</strong><small>Elige entre los cursos y asignaturas disponibles</small></span>
+        <span class="teacher-add-arrow">→</span>
+      </button>
+    </section>
+
+    <div class="teacher-stat-grid">
+      <div class="teacher-stat-card"><span class="teacher-stat-icon">▤</span><div><small>Clases asignadas</small><strong>${d.assignments.length}</strong></div></div>
+      <div class="teacher-stat-card"><span class="teacher-stat-icon">◎</span><div><small>Cursos</small><strong>${courseTotal}</strong></div></div>
+      <div class="teacher-stat-card"><span class="teacher-stat-icon orange">▦</span><div><small>Materias</small><strong>${subjectTotal}</strong></div></div>
+      <div class="teacher-stat-card"><span class="teacher-stat-icon green">✓</span><div><small>Evaluaciones</small><strong>${evalTotal}</strong></div></div>
     </div>
-    <div class="grid cols-4" style="margin-bottom:24px">
-      <div class="card stat"><span>Clases asignadas</span><strong>${d.assignments.length}</strong></div>
-      <div class="card stat"><span>Estudiantes</span><strong>${studentTotal}</strong></div>
-      <div class="card stat"><span>Evaluaciones</span><strong>${evalTotal}</strong></div>
-      <div class="card stat"><span>Año escolar</span><strong>${d.activeYear.year}</strong></div>
+
+    <div class="teacher-section-head">
+      <div><span class="eyebrow">Organización</span><h2>Mis cursos y materias</h2><p>Selecciona una clase para abrir el libro de notas.</p></div>
+      <span class="teacher-student-count">${studentTotal} estudiantes vinculados</span>
     </div>
-    <div style="margin:26px 0 13px"><h3 style="margin:0;font-size:17px">Mis cursos</h3><p class="muted" style="margin:3px 0 0">Selecciona una materia para abrir su libro de notas.</p></div>
-    <div class="grid cols-3">
-      ${d.assignments.map(a=>`<button class="card course-card" data-open-class="${a.id}" style="text-align:left;border:1px solid var(--line)">
-        <div><span class="eyebrow">${U.esc(a.courseName)}</span><h2 style="margin-top:7px">${U.esc(a.subjectName)}</h2><p>${a.studentCount} estudiantes · ${a.evaluationCount} evaluaciones</p></div>
-        <span class="badge blue">Abrir</span>
-      </button>`).join('')||'<div class="card empty">Aún no tienes clases asignadas.</div>'}
+
+    <div class="teacher-course-grid">
+      ${d.assignments.map((a,i)=>`<button type="button" class="teacher-course-card" data-open-class="${a.id}">
+        <span class="teacher-course-accent accent-${i%3}"></span>
+        <div class="teacher-course-top"><span class="teacher-course-pill">${U.esc(a.courseName)}</span><span class="teacher-course-open">Abrir →</span></div>
+        <h3>${U.esc(a.subjectName)}</h3>
+        <div class="teacher-course-meta"><span><b>${a.studentCount}</b> estudiantes</span><span><b>${a.evaluationCount}</b> evaluaciones</span></div>
+      </button>`).join('')||`<div class="teacher-empty-state"><div class="teacher-empty-icon">▤</div><h3>Aún no tienes cursos agregados</h3><p>Agrega una combinación de curso y materia para comenzar a trabajar con tu libro de notas.</p><button id="teacherEmptyAdd" type="button" class="btn primary">+ Agregar mi primera clase</button></div>`}
     </div>`;
+
+  const openManager=()=>openAddClass();
+  $('#addTeacherClass').onclick=openManager;
+  $('#teacherHeroAdd').onclick=openManager;
+  const empty=$('#teacherEmptyAdd');if(empty)empty.onclick=openManager;
   $('#content').onclick=e=>{const b=e.target.closest('[data-open-class]');if(b)U.navigate(`teacher-class-${b.dataset.openClass}`)};
 };
+
+async function openAddClass(){
+  U.openModal('Agregar curso y materia','<div id="teacherCatalogLoading" class="teacher-catalog-loading"><div class="teacher-loader"></div><strong>Cargando opciones…</strong><span>Buscando cursos y materias disponibles.</span></div>');
+  try{
+    const d=await U.api('/api/teacher/catalog');
+    const body=$('#modalBody');if(!body)return;
+    if(!d.courses.length||!d.subjects.length){
+      body.innerHTML='<div class="modal-body"><div class="teacher-catalog-empty"><strong>No hay opciones disponibles</strong><p>El administrador debe crear al menos un curso y una materia activos para el año actual.</p><button type="button" class="btn ghost" data-close>Cerrar</button></div></div>';
+      const c=$('[data-close]');if(c)c.onclick=U.closeModal;return;
+    }
+    const assigned=new Set(d.assigned.map(x=>`${x.courseId}-${x.subjectId}`));
+    body.innerHTML=`<div class="modal-body"><form id="teacherAddClassForm" class="stack teacher-add-form">
+      <div class="teacher-manager-intro"><span class="teacher-manager-icon">▤</span><div><strong>Organiza tus clases</strong><p>Selecciona un curso y la materia que impartes. Solo se muestran opciones activas del año ${d.activeYear.year}.</p></div></div>
+      <div class="form-grid">
+        <div class="field"><label>Curso</label><select name="courseId" id="teacherCourseSelect" required>${d.courses.map(c=>`<option value="${c.id}">${U.esc(c.name)} · ${c.studentCount} estudiantes</option>`).join('')}</select></div>
+        <div class="field"><label>Materia</label><select name="subjectId" id="teacherSubjectSelect" required>${d.subjects.map(s=>`<option value="${s.id}">${U.esc(s.name)}</option>`).join('')}</select></div>
+      </div>
+      <div id="teacherSelectionPreview" class="teacher-selection-preview"></div>
+      <div class="teacher-manager-note"><span>i</span><p>Esto agrega la combinación a <b>tus clases</b>. La creación de cursos o materias nuevas para todo el liceo sigue estando a cargo de administración.</p></div>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Cancelar</button><button id="teacherAddSubmit" class="btn primary">Agregar a mis clases</button></div>
+    </form></div>`;
+    const f=$('#teacherAddClassForm'),cs=$('#teacherCourseSelect'),ss=$('#teacherSubjectSelect'),preview=$('#teacherSelectionPreview'),submit=$('#teacherAddSubmit');
+    const refresh=()=>{
+      const c=d.courses.find(x=>x.id===Number(cs.value)),s=d.subjects.find(x=>x.id===Number(ss.value)),exists=assigned.has(`${c?.id}-${s?.id}`);
+      preview.innerHTML=`<div><small>Se agregará</small><strong>${U.esc(c?.name||'Curso')} · ${U.esc(s?.name||'Materia')}</strong></div><span class="badge ${exists?'warn':'blue'}">${exists?'Ya está en tus clases':'Disponible'}</span>`;
+      submit.textContent=exists?'Abrir clase existente':'Agregar a mis clases';
+    };
+    cs.onchange=refresh;ss.onchange=refresh;refresh();
+    f.onsubmit=async e=>{
+      e.preventDefault();const courseId=Number(cs.value),subjectId=Number(ss.value),wasAssigned=assigned.has(`${courseId}-${subjectId}`),old=submit.textContent;
+      submit.disabled=true;submit.textContent=wasAssigned?'Abriendo…':'Agregando…';
+      try{
+        await U.api('/api/teacher/assignments',{method:'POST',body:{courseId,subjectId}});
+        U.closeModal();U.toast(wasAssigned?'La clase ya estaba agregada':'Curso y materia agregados');await U.renderTeacherHome();
+      }catch(err){U.toast(err.message);submit.disabled=false;submit.textContent=old}
+    };
+    const close=$('[data-close]');if(close)close.onclick=U.closeModal;
+  }catch(err){
+    const body=$('#modalBody');if(body)body.innerHTML=`<div class="modal-body"><div class="teacher-catalog-empty"><strong>No se pudieron cargar las opciones</strong><p>${U.esc(err.message)}</p><button type="button" class="btn ghost" data-close>Cerrar</button></div></div>`;
+    const c=$('[data-close]');if(c)c.onclick=U.closeModal;
+  }
+}
 
 U.renderTeacherClass=async id=>{
   const d=await U.api(`/api/teacher/assignments/${id}`);
