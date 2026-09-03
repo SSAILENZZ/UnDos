@@ -8,7 +8,41 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>UnDos | Liceo Tecnológico Montemaria</title>
-  <link rel="stylesheet" href="/styles.css?v=20260902-1">
+  <link rel="stylesheet" href="/styles.css?v=20260902-2">
+  <style>
+    /* Etapa 1: panel del estudiante basado en la maqueta original */
+    .student-head{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin-bottom:22px}
+    .student-head h1{margin:0 0 5px;font-size:30px;letter-spacing:-.8px;color:#17202A}
+    .student-head p{margin:0;color:#6B7280;font-size:15px}
+    .student-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:26px}
+    .student-stat{background:#fff;border:1px solid #E6EAF0;border-radius:15px;padding:20px 18px;min-height:96px}
+    .student-stat span{display:block;color:#6B7280;font-size:12px;font-weight:700;margin-bottom:10px}
+    .student-stat strong{display:block;color:#07375A;font-size:25px;line-height:1.05}
+    .student-stat strong.pending-number{color:#EB521F}
+    .student-section-head{display:flex;justify-content:space-between;align-items:end;gap:14px;margin:0 0 12px}
+    .student-section-head h2{margin:0;font-size:18px;color:#17202A}
+    .student-section-head p{margin:4px 0 0;color:#6B7280;font-size:13px}
+    .student-subject-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+    .student-subject-card{position:relative;overflow:hidden;width:100%;min-height:145px;border:1px solid #E6EAF0;border-radius:16px;background:#fff;padding:20px 18px;text-align:left;color:#17202A;transition:.18s;box-shadow:none}
+    .student-subject-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#07375A}
+    .student-subject-card:nth-child(3n+2):before{background:#EB521F}
+    .student-subject-card:nth-child(3n):before{background:#30936F}
+    .student-subject-card:hover{transform:translateY(-2px);box-shadow:0 18px 50px rgba(16,38,59,.10);border-color:#D7E1E8}
+    .student-subject-card h3{margin:0 0 5px;font-size:16px;color:#17202A}
+    .student-subject-card .teacher{display:block;color:#6B7280;font-size:12px}
+    .student-subject-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:28px}
+    .student-subject-bottom .avg small{display:block;color:#6B7280;font-size:11px;margin-bottom:2px}
+    .student-subject-bottom .avg strong{display:block;color:#07375A;font-size:18px}
+    .student-detail{margin-top:18px;background:#fff;border:1px solid #E6EAF0;border-radius:16px;overflow:hidden}
+    .student-detail-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid #E6EAF0}
+    .student-detail-head h3{margin:0;font-size:17px}
+    .student-detail-head p{margin:3px 0 0;color:#6B7280;font-size:12px}
+    .student-detail table{min-width:650px}
+    .semester{border:1px solid #E6EAF0;background:#fff;color:#17202A;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:700;outline:none}
+    .semester:focus{border-color:#9DB7CA;box-shadow:0 0 0 3px rgba(7,55,90,.07)}
+    @media(max-width:1180px){.student-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.student-subject-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:700px){.student-head{align-items:flex-start;flex-direction:column}.student-stats,.student-subject-grid{grid-template-columns:1fr}.student-head h1{font-size:26px}}
+  </style>
 </head>
 <body>
   <section id="loginView" class="login-page">
@@ -100,9 +134,9 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="/core.js?v=20260902-1" defer></script>
+  <script src="/core.js?v=20260902-2" defer></script>
   <script src="/admin.js?v=20260902-1" defer></script>
   <script src="/teacher.js?v=20260902-1" defer></script>
-  <script src="/student.js?v=20260902-1" defer></script>
+  <script src="/student.js?v=20260902-2" defer></script>
 </body>
 </html>

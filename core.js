@@ -42,11 +42,11 @@ U.renderShell=()=>{
     title='Administración';
     nav=[['admin-home','⌂','Resumen'],['admin-users','◎','Usuarios'],['admin-academic','▦','Académico']];
   }else if(u.role==='teacher'){
-    title='Docencia';
+    title='Profesor';
     nav=[['teacher-home','▦','Mis clases']];
   }else{
     title='Estudiante';
-    nav=[['student-home','▤','Mis notas']];
+    nav=[['student-home','⌂','Inicio']];
   }
   navEl.innerHTML=`<div class="nav-title">${title}</div>`+nav.map(([id,icon,label])=>`<button class="nav-btn" data-page="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');
   navEl.onclick=e=>{const b=e.target.closest('[data-page]');if(b)U.navigate(b.dataset.page)};
