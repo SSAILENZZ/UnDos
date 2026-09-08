@@ -35,14 +35,14 @@ function renderAttendance(d,{preview=false,sample=false}={}){
 
 U.renderStudentAttendance=async()=>{const d=await U.api('/api/student/attendance');renderAttendance(d)};
 
-const baseRenderShell=U.renderShell;
-U.renderShell=()=>{
-  baseRenderShell();
+function ensureStudentAttendanceNav(){
   if(S.user?.role!=='student')return;
   const nav=$('#nav');if(!nav||nav.querySelector('[data-page="student-attendance"]'))return;
   const b=document.createElement('button');b.type='button';b.className='nav-btn';b.dataset.page='student-attendance';b.innerHTML='<span class="nav-icon">✓</span><span>Asistencia</span>';
   const history=nav.querySelector('[data-page="student-history"]');nav.insertBefore(b,history||null);
-};
+}
+const baseRenderShell=U.renderShell;
+U.renderShell=()=>{baseRenderShell();ensureStudentAttendanceNav()};
 
 const baseNavigate=U.navigate;
 U.navigate=async page=>{
@@ -68,6 +68,6 @@ function ensurePreviewAttendance(){
   const b=document.createElement('button');b.type='button';b.className='nav-btn';b.setAttribute('data-preview-attendance','');b.innerHTML='<span class="nav-icon">✓</span><span>Asistencia</span>';
   const hist=nav.querySelector('[data-preview-history]');nav.insertBefore(b,hist||null);b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();renderPreviewAttendance()},true);
 }
-const nav=$('#nav');if(nav)new MutationObserver(()=>setTimeout(ensurePreviewAttendance,0)).observe(nav,{childList:true,subtree:false});
-document.addEventListener('click',()=>setTimeout(ensurePreviewAttendance,0),true);setTimeout(ensurePreviewAttendance,0);
+const nav=$('#nav');if(nav)new MutationObserver(()=>setTimeout(()=>{ensureStudentAttendanceNav();ensurePreviewAttendance()},0)).observe(nav,{childList:true,subtree:false});
+document.addEventListener('click',()=>setTimeout(()=>{ensureStudentAttendanceNav();ensurePreviewAttendance()},0),true);setTimeout(()=>{ensureStudentAttendanceNav();ensurePreviewAttendance()},0);
 })();
