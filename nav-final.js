@@ -61,3 +61,9 @@ setTimeout(stabilizeNav,0);
   const load=()=>{if(document.querySelector('script[data-post-review-fixes]'))return;if(!document.getElementById('undosStabilitySweep')&&tries++<150){setTimeout(load,20);return}const s=document.createElement('script');s.src='/post-review-fixes.js?v=20260909-29';s.dataset.postReviewFixes='1';document.head.appendChild(s)};
   load();
 })();
+
+(()=>{
+  let tries=0;
+  const load=()=>{if(document.querySelector('script[data-navigation-layout-fixes]'))return;if(!document.querySelector('script[data-post-review-fixes]')&&tries++<150){setTimeout(load,20);return}const s=document.createElement('script');s.src='/navigation-layout-fixes.js?v=20260909-30';s.dataset.navigationLayoutFixes='1';document.head.appendChild(s)};
+  load();
+})();
