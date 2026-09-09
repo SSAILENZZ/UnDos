@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_grades_eval_student ON grades(evaluation_id,stude
 CREATE INDEX IF NOT EXISTS idx_attendance_assignment_date ON attendance_records(assignment_id,attendance_date);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance_records(student_id,attendance_date);`);
   const yearNum=new Date().getFullYear();
-  await pool.query('INSERT INTO academic_years(year,active) VALUES($1,TRUE) ON CONFLICT(year) DO NOTHING',[yearNum]);
+  await pool.query('INSERT INTO academic_years(year,active) VALUES($1,FALSE) ON CONFLICT(year) DO NOTHING',[yearNum]);
   const anyActive=await pool.query('SELECT 1 FROM academic_years WHERE active=TRUE LIMIT 1');if(!anyActive.rows[0])await pool.query('UPDATE academic_years SET active=(year=$1)',[yearNum]);
   const year=await activeYear();
   for(const [name,order] of [['7° Básico',7],['8° Básico',8],['1° Medio',9],['2° Medio',10],['3° Medio',11],['4° Medio',12]])await pool.query('INSERT INTO courses(academic_year_id,name,level_order) VALUES($1,$2,$3) ON CONFLICT(academic_year_id,name) DO NOTHING',[year.id,name,order]);
