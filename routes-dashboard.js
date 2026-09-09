@@ -4,6 +4,7 @@ const {apiError,auth}=require('./auth');
 const r=express.Router();
 r.use(auth);
 
+const CHILE_TODAY=`(CURRENT_TIMESTAMP AT TIME ZONE 'America/Santiago')::date`;
 const pct=(a,b)=>Number(b)?round1(Number(a)*100/Number(b)):null;
 function mapMonthly(rows){return rows.map(x=>({month:x.month,total:Number(x.total||0),present:Number(x.present||0),absent:Number(x.absent||0),percentage:Number(x.total)?pct(x.present,x.total):null}))}
 function distribution(rows){const order=['2.0–2.9','3.0–3.9','4.0–4.9','5.0–5.9','6.0–6.9','7.0'];const m=new Map(rows.map(x=>[x.bucket,Number(x.total)]));return order.map(bucket=>({bucket,total:m.get(bucket)||0}))}
@@ -15,7 +16,7 @@ async function adminDashboard(){
     pool.query(`SELECT
       (SELECT COUNT(*)::int FROM users WHERE role='student' AND active=TRUE) students,
       (SELECT COUNT(*)::int FROM users WHERE role='teacher' AND active=TRUE) teachers,
-      (SELECT COUNT(*)::int FROM enrollments WHERE academic_year_id=$1) enrollments,
+      (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id WHERE e.academic_year_id=$1 AND u.role='student' AND u.active=TRUE AND c.active=TRUE) enrollments,
       (SELECT COUNT(*)::int FROM teaching_assignments WHERE academic_year_id=$1 AND active=TRUE) assignments,
       (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE) evaluations,
       (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.status='completed') completed,
@@ -25,12 +26,12 @@ async function adminDashboard(){
     pool.query(`SELECT to_char(date_trunc('month',ar.attendance_date),'YYYY-MM') month,COUNT(*)::int total,COUNT(*) FILTER(WHERE ar.status='present')::int present,COUNT(*) FILTER(WHERE ar.status='absent')::int absent FROM attendance_records ar JOIN teaching_assignments ta ON ta.id=ar.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE GROUP BY 1 ORDER BY 1`,[y.id]),
     pool.query(`SELECT ${gradeBucketSql} bucket,COUNT(*)::int total FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE GROUP BY 1`,[y.id]),
     pool.query(`SELECT c.id,c.name,c.level_order,
-      (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id=c.id AND e.academic_year_id=$1) students,
+      (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=c.id AND e.academic_year_id=$1 AND u.role='student' AND u.active=TRUE) students,
       (SELECT AVG(g.grade)::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE) grade_average,
       (SELECT COUNT(*)::int FROM attendance_records ar JOIN teaching_assignments ta ON ta.id=ar.assignment_id WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE) attendance_total,
       (SELECT COUNT(*)::int FROM attendance_records ar JOIN teaching_assignments ta ON ta.id=ar.assignment_id WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE AND ar.status='present') attendance_present
       FROM courses c WHERE c.academic_year_id=$1 AND c.active=TRUE ORDER BY c.level_order,c.name`,[y.id]),
-    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,c.name course_name,s.name subject_name,u.full_name teacher_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.eval_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '14 days' ORDER BY ev.eval_date,c.level_order,c.name LIMIT 15`,[y.id])
+    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,c.name course_name,s.name subject_name,u.full_name teacher_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND c.active=TRUE AND u.active=TRUE AND ev.eval_date BETWEEN ${CHILE_TODAY} AND ${CHILE_TODAY}+INTERVAL '14 days' ORDER BY ev.eval_date,c.level_order,c.name LIMIT 15`,[y.id])
   ]);
   const s=summary.rows[0]||{};return {role:'admin',activeYear:y,summary:{students:Number(s.students||0),teachers:Number(s.teachers||0),enrollments:Number(s.enrollments||0),assignments:Number(s.assignments||0),evaluations:Number(s.evaluations||0),completed:Number(s.completed||0),gradeAverage:s.grade_average==null?null:round1(s.grade_average),attendanceTotal:Number(s.attendance_total||0),attendancePresent:Number(s.attendance_present||0),attendancePercentage:Number(s.attendance_total)?pct(s.attendance_present,s.attendance_total):null},monthlyAttendance:mapMonthly(monthly.rows),gradeDistribution:distribution(grades.rows),courses:courses.rows.map(x=>({id:x.id,name:x.name,students:Number(x.students||0),gradeAverage:x.grade_average==null?null:round1(x.grade_average),attendancePercentage:Number(x.attendance_total)?pct(x.attendance_present,x.attendance_total):null})),upcoming:upcoming.rows.map(x=>({id:x.id,name:x.name,date:x.date,courseName:x.course_name,subjectName:x.subject_name,teacherName:x.teacher_name}))};
 }
@@ -39,16 +40,16 @@ async function teacherDashboard(userId){
   const y=await activeYear();
   const [assignments,monthly,grades,upcoming]=await Promise.all([
     pool.query(`SELECT ta.id,c.name course_name,s.name subject_name,
-      (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id=ta.course_id AND e.academic_year_id=ta.academic_year_id) students,
+      (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=ta.course_id AND e.academic_year_id=ta.academic_year_id AND u.role='student' AND u.active=TRUE) students,
       (SELECT COUNT(*)::int FROM evaluations ev WHERE ev.assignment_id=ta.id) evaluations,
       (SELECT COUNT(*)::int FROM evaluations ev WHERE ev.assignment_id=ta.id AND ev.status='completed') completed,
       (SELECT AVG(g.grade)::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id WHERE ev.assignment_id=ta.id) grade_average,
       (SELECT COUNT(*)::int FROM attendance_records ar WHERE ar.assignment_id=ta.id) attendance_total,
       (SELECT COUNT(*)::int FROM attendance_records ar WHERE ar.assignment_id=ta.id AND ar.status='present') attendance_present
-      FROM teaching_assignments ta JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE ORDER BY c.level_order,c.name,s.name`,[userId,y.id]),
+      FROM teaching_assignments ta JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND c.active=TRUE ORDER BY c.level_order,c.name,s.name`,[userId,y.id]),
     pool.query(`SELECT to_char(date_trunc('month',ar.attendance_date),'YYYY-MM') month,COUNT(*)::int total,COUNT(*) FILTER(WHERE ar.status='present')::int present,COUNT(*) FILTER(WHERE ar.status='absent')::int absent FROM attendance_records ar JOIN teaching_assignments ta ON ta.id=ar.assignment_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE GROUP BY 1 ORDER BY 1`,[userId,y.id]),
     pool.query(`SELECT ${gradeBucketSql} bucket,COUNT(*)::int total FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE GROUP BY 1`,[userId,y.id]),
-    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,c.name course_name,s.name subject_name,ev.weight::float FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND ev.eval_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '14 days' ORDER BY ev.eval_date,c.level_order,c.name LIMIT 15`,[userId,y.id])
+    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,c.name course_name,s.name subject_name,ev.weight::float FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN courses c ON c.id=ta.course_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.teacher_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND c.active=TRUE AND ev.eval_date BETWEEN ${CHILE_TODAY} AND ${CHILE_TODAY}+INTERVAL '14 days' ORDER BY ev.eval_date,c.level_order,c.name LIMIT 15`,[userId,y.id])
   ]);
   const list=assignments.rows.map(x=>({id:x.id,courseName:x.course_name,subjectName:x.subject_name,students:Number(x.students||0),evaluations:Number(x.evaluations||0),completed:Number(x.completed||0),gradeAverage:x.grade_average==null?null:round1(x.grade_average),attendancePercentage:Number(x.attendance_total)?pct(x.attendance_present,x.attendance_total):null}));
   const totals=list.reduce((a,x)=>({students:a.students+x.students,evaluations:a.evaluations+x.evaluations,completed:a.completed+x.completed}),{students:0,evaluations:0,completed:0});const attRows=monthly.rows.reduce((a,x)=>({total:a.total+Number(x.total),present:a.present+Number(x.present)}),{total:0,present:0});
@@ -57,17 +58,17 @@ async function teacherDashboard(userId){
 }
 
 async function studentDashboard(userId){
-  const y=await activeYear();const en=(await pool.query(`SELECT c.id,c.name FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=$1 AND e.academic_year_id=$2 LIMIT 1`,[userId,y.id])).rows[0];
+  const y=await activeYear();const en=(await pool.query(`SELECT c.id,c.name FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=$1 AND e.academic_year_id=$2 AND c.active=TRUE LIMIT 1`,[userId,y.id])).rows[0];
   if(!en)return {role:'student',activeYear:y,course:null,summary:{subjects:0,gradeAverage:null,attendancePercentage:null,upcoming:0},monthlyAttendance:[],gradeDistribution:[],subjects:[],upcoming:[]};
   const [subjects,monthly,grades,upcoming,overall]=await Promise.all([
     pool.query(`SELECT ta.id,s.name subject_name,u.full_name teacher_name,
       (SELECT AVG(g.grade)::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id WHERE ev.assignment_id=ta.id AND g.student_id=$1) grade_average,
       (SELECT COUNT(*)::int FROM attendance_records ar WHERE ar.assignment_id=ta.id AND ar.student_id=$1) attendance_total,
       (SELECT COUNT(*)::int FROM attendance_records ar WHERE ar.assignment_id=ta.id AND ar.student_id=$1 AND ar.status='present') attendance_present
-      FROM teaching_assignments ta JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.course_id=$2 AND ta.academic_year_id=$3 AND ta.active=TRUE ORDER BY s.name`,[userId,en.id,y.id]),
+      FROM teaching_assignments ta JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.course_id=$2 AND ta.academic_year_id=$3 AND ta.active=TRUE AND s.active=TRUE AND u.active=TRUE ORDER BY s.name`,[userId,en.id,y.id]),
     pool.query(`SELECT to_char(date_trunc('month',ar.attendance_date),'YYYY-MM') month,COUNT(*)::int total,COUNT(*) FILTER(WHERE ar.status='present')::int present,COUNT(*) FILTER(WHERE ar.status='absent')::int absent FROM attendance_records ar JOIN teaching_assignments ta ON ta.id=ar.assignment_id WHERE ar.student_id=$1 AND ta.academic_year_id=$2 AND ta.course_id=$3 GROUP BY 1 ORDER BY 1`,[userId,y.id,en.id]),
     pool.query(`SELECT ${gradeBucketSql} bucket,COUNT(*)::int total FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE g.student_id=$1 AND ta.academic_year_id=$2 AND ta.course_id=$3 GROUP BY 1`,[userId,y.id,en.id]),
-    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,s.name subject_name,u.full_name teacher_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.course_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND ev.eval_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '14 days' ORDER BY ev.eval_date,s.name LIMIT 15`,[en.id,y.id]),
+    pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,s.name subject_name,u.full_name teacher_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN users u ON u.id=ta.teacher_id WHERE ta.course_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND s.active=TRUE AND u.active=TRUE AND ev.eval_date BETWEEN ${CHILE_TODAY} AND ${CHILE_TODAY}+INTERVAL '14 days' ORDER BY ev.eval_date,s.name LIMIT 15`,[en.id,y.id]),
     pool.query(`SELECT AVG(g.grade)::float grade_average,COUNT(*)::int grades FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE g.student_id=$1 AND ta.academic_year_id=$2 AND ta.course_id=$3`,[userId,y.id,en.id])
   ]);
   const sr=subjects.rows.map(x=>({id:x.id,name:x.subject_name,teacherName:x.teacher_name,gradeAverage:x.grade_average==null?null:round1(x.grade_average),attendancePercentage:Number(x.attendance_total)?pct(x.attendance_present,x.attendance_total):null}));const ar=monthly.rows.reduce((a,x)=>({total:a.total+Number(x.total),present:a.present+Number(x.present)}),{total:0,present:0});
