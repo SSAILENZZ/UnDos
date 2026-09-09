@@ -8,6 +8,7 @@ function mapOverall(subjects){
 }
 
 async function yearProfile(studentId,enrollment){
+  const activeYear=Boolean(enrollment.year_active);
   const [academic,attendance]=await Promise.all([
     pool.query(`SELECT ta.id assignment_id,s.id subject_id,s.name subject_name,u.full_name teacher_name,
       ev.id evaluation_id,ev.name evaluation_name,ev.eval_date::text eval_date,ev.semester,ev.weight::float,ev.status,g.grade::float
@@ -16,8 +17,8 @@ async function yearProfile(studentId,enrollment){
       LEFT JOIN users u ON u.id=ta.teacher_id
       LEFT JOIN evaluations ev ON ev.assignment_id=ta.id
       LEFT JOIN grades g ON g.evaluation_id=ev.id AND g.student_id=$1
-      WHERE ta.course_id=$2 AND ta.academic_year_id=$3
-      ORDER BY s.name,ta.id,ev.semester,ev.eval_date NULLS LAST,ev.id`,[studentId,enrollment.course_id,enrollment.academic_year_id]),
+      WHERE ta.course_id=$2 AND ta.academic_year_id=$3 AND ($4::boolean=FALSE OR ta.active=TRUE)
+      ORDER BY s.name,ta.id,ev.semester,ev.eval_date NULLS LAST,ev.id`,[studentId,enrollment.course_id,enrollment.academic_year_id,activeYear]),
     pool.query(`SELECT ar.attendance_date::text date,ar.status
       FROM attendance_records ar
       JOIN teaching_assignments ta ON ta.id=ar.assignment_id
@@ -36,7 +37,7 @@ async function yearProfile(studentId,enrollment){
   const present=attendance.rows.filter(x=>x.status==='present').length,absent=attendance.rows.filter(x=>x.status==='absent').length,total=present+absent;
   const evaluations=subjects.reduce((n,s)=>n+s.evaluations.length,0),completed=subjects.reduce((n,s)=>n+s.evaluations.filter(e=>e.status==='completed').length,0);
   return {
-    yearId:Number(enrollment.academic_year_id),year:Number(enrollment.year),active:Boolean(enrollment.year_active),
+    yearId:Number(enrollment.academic_year_id),year:Number(enrollment.year),active:activeYear,
     course:{id:Number(enrollment.course_id),name:enrollment.course_name},
     subjects,overall:mapOverall(subjects),gradeAverage:gradeValues.length?round1(gradeValues.reduce((a,b)=>a+b,0)/gradeValues.length):null,
     attendance:{total,present,absent,days:new Set(attendance.rows.map(x=>x.date)).size,percentage:total?round1(present*100/total):null},
