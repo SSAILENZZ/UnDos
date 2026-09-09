@@ -10,7 +10,7 @@ r.get('/student/:id/attendance',async(req,res)=>{
     const uq=await pool.query("SELECT id,rut,full_name FROM users WHERE id=$1 AND role='student' AND active=TRUE",[studentId]);
     const student=uq.rows[0];if(!student)return apiError(res,404,'Estudiante no encontrado');
     const y=await activeYear();
-    const en=await pool.query(`SELECT e.course_id,c.name course_name FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=$1 AND e.academic_year_id=$2 LIMIT 1`,[studentId,y.id]);
+    const en=await pool.query(`SELECT e.course_id,c.name course_name FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=$1 AND e.academic_year_id=$2 AND c.active=TRUE LIMIT 1`,[studentId,y.id]);
     if(!en.rows[0])return res.json({previewUser:{id:student.id,rut:student.rut,fullName:student.full_name,role:'student'},activeYear:y,course:null,summary:{total:0,present:0,absent:0,days:0,percentage:null},subjects:[],records:[]});
     const course=en.rows[0];
     const {rows}=await pool.query(`SELECT ar.attendance_date::text date,ar.status,ta.id assignment_id,s.id subject_id,s.name subject_name,t.full_name teacher_name
