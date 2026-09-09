@@ -31,6 +31,7 @@ app.use('/api/admin',require('./routes-admin-statistics'));
 app.use('/api/admin',require('./routes-admin-integrity'));
 app.use('/api/admin',require('./routes-admin-courses'));
 app.use('/api/admin',require('./routes-admin'));
+app.use('/api/teacher',require('./routes-teacher-date-integrity'));
 app.use('/api/teacher',require('./routes-teacher-planbook'));
 app.use('/api/teacher',require('./routes-teacher-planning'));
 app.use('/api/teacher',require('./routes-teacher'));
