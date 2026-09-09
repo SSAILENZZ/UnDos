@@ -26,6 +26,7 @@ app.use('/api/admin',require('./routes-admin-search'));
 app.use('/api/admin',require('./routes-admin-audit'));
 app.use('/api/admin',require('./routes-admin-promotion'));
 app.use('/api/admin',require('./routes-admin-statistics'));
+app.use('/api/admin',require('./routes-admin-integrity'));
 app.use('/api/admin',require('./routes-admin-courses'));
 app.use('/api/admin',require('./routes-admin'));
 app.use('/api/teacher',require('./routes-teacher-planbook'));
