@@ -3,6 +3,7 @@ const {pool,activeYear}=require('./db');
 const {apiError,auth,requireRole}=require('./auth');
 const r=express.Router();
 r.use(auth,requireRole('admin'));
+const CHILE_TODAY=`(CURRENT_TIMESTAMP AT TIME ZONE 'America/Santiago')::date`;
 
 r.get('/statistics',async(_req,res)=>{
   try{
@@ -15,11 +16,11 @@ r.get('/statistics',async(_req,res)=>{
           (SELECT COUNT(*)::int FROM courses WHERE academic_year_id=$1 AND active=TRUE) courses,
           (SELECT COUNT(*)::int FROM subjects WHERE active=TRUE) subjects,
           (SELECT COUNT(*)::int FROM teaching_assignments WHERE academic_year_id=$1 AND active=TRUE) assignments,
-          (SELECT COUNT(*)::int FROM enrollments WHERE academic_year_id=$1) enrollments,
+          (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id WHERE e.academic_year_id=$1 AND u.role='student' AND u.active=TRUE AND c.active=TRUE) enrollments,
           (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE) evaluations,
           (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.status='completed') evaluations_completed,
           (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.status='pending') evaluations_pending,
-          (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.eval_date>=CURRENT_DATE AND ev.eval_date<CURRENT_DATE+INTERVAL '8 days') evaluations_next7,
+          (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND ev.eval_date>=${CHILE_TODAY} AND ev.eval_date<${CHILE_TODAY}+INTERVAL '8 days') evaluations_next7,
           (SELECT COUNT(*)::int FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE) grades_count,
           (SELECT AVG(g.grade)::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.academic_year_id=$1 AND ta.active=TRUE) grades_average
       `,[y.id]),
@@ -34,7 +35,7 @@ r.get('/statistics',async(_req,res)=>{
       `,[y.id]),
       pool.query(`
         SELECT c.id,c.name,c.level_order,
-          (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id=c.id AND e.academic_year_id=$1) students,
+          (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=c.id AND e.academic_year_id=$1 AND u.role='student' AND u.active=TRUE) students,
           (SELECT COUNT(*)::int FROM teaching_assignments ta WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE) assignments,
           (SELECT COUNT(*)::int FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE) evaluations,
           (SELECT AVG(g.grade)::float FROM grades g JOIN evaluations ev ON ev.id=g.evaluation_id JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ta.course_id=c.id AND ta.academic_year_id=$1 AND ta.active=TRUE) grade_average,
@@ -65,8 +66,8 @@ r.get('/statistics',async(_req,res)=>{
         JOIN courses c ON c.id=ta.course_id
         JOIN subjects s ON s.id=ta.subject_id
         JOIN users u ON u.id=ta.teacher_id
-        WHERE ta.academic_year_id=$1 AND ta.active=TRUE
-          AND ev.eval_date>=CURRENT_DATE AND ev.eval_date<CURRENT_DATE+INTERVAL '15 days'
+        WHERE ta.academic_year_id=$1 AND ta.active=TRUE AND c.active=TRUE AND u.active=TRUE
+          AND ev.eval_date>=${CHILE_TODAY} AND ev.eval_date<${CHILE_TODAY}+INTERVAL '15 days'
         ORDER BY ev.eval_date,c.level_order,c.name,s.name
         LIMIT 60
       `,[y.id])
