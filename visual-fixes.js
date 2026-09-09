@@ -7,4 +7,5 @@ s.textContent=`
 @media(max-width:650px){.student-att-ring>div{width:68px}.student-att-ring strong{font-size:20px!important}.student-att-ring small{font-size:7px!important}}
 `;
 document.head.appendChild(s);
+if(!document.querySelector('script[data-admin-statistics-loader]')){const js=document.createElement('script');js.src='/admin-statistics.js?v=20260909-1';js.dataset.adminStatisticsLoader='1';document.head.appendChild(js)}
 })();
