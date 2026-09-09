@@ -37,9 +37,14 @@ r.delete('/courses/:id',async(req,res)=>{
     const id=Number(req.params.id),y=await activeYear(c);
     const q=await c.query('SELECT id,name FROM courses WHERE id=$1 AND academic_year_id=$2 AND active=TRUE',[id,y.id]);if(!q.rows[0])return apiError(res,404,'Curso no encontrado');
     const course=q.rows[0];
-    const deps=await c.query(`SELECT (SELECT COUNT(*)::int FROM enrollments WHERE course_id=$1) enrollments,(SELECT COUNT(*)::int FROM teaching_assignments WHERE course_id=$1) assignments`,[id]);
-    const hasData=Number(deps.rows[0].enrollments)>0||Number(deps.rows[0].assignments)>0;
-    if(hasData){await c.query('BEGIN');await c.query('UPDATE courses SET active=FALSE WHERE id=$1',[id]);await c.query('UPDATE teaching_assignments SET active=FALSE WHERE course_id=$1',[id]);await c.query('COMMIT');await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.archive',entityType:'course',entityId:id,description:`Archivó el curso ${course.name} para conservar su historial.`,metadata:{academicYear:y.year,enrollments:Number(deps.rows[0].enrollments),assignments:Number(deps.rows[0].assignments)}});return res.json({ok:true,archived:true,message:'El curso fue archivado para conservar su historial académico.'})}
+    const deps=await c.query(`SELECT
+      (SELECT COUNT(*)::int FROM enrollments WHERE course_id=$1 AND academic_year_id=$2) enrollments,
+      (SELECT COUNT(*)::int FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.role='student' AND u.active=TRUE) active_students,
+      (SELECT COUNT(*)::int FROM teaching_assignments WHERE course_id=$1 AND academic_year_id=$2) assignments`,[id,y.id]);
+    const activeStudents=Number(deps.rows[0].active_students||0),enrollments=Number(deps.rows[0].enrollments||0),assignments=Number(deps.rows[0].assignments||0);
+    if(activeStudents>0)return apiError(res,409,`No puedes archivar ${course.name} mientras tenga ${activeStudents} estudiante${activeStudents===1?' activo':'s activos'} matriculado${activeStudents===1?'':'s'}. Muévelos a otro curso primero.`);
+    const hasData=enrollments>0||assignments>0;
+    if(hasData){await c.query('BEGIN');await c.query('UPDATE courses SET active=FALSE WHERE id=$1',[id]);await c.query('UPDATE teaching_assignments SET active=FALSE WHERE course_id=$1 AND academic_year_id=$2',[id,y.id]);await c.query('COMMIT');await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.archive',entityType:'course',entityId:id,description:`Archivó el curso ${course.name} para conservar su historial.`,metadata:{academicYear:y.year,enrollments,assignments}});return res.json({ok:true,archived:true,message:'El curso fue archivado para conservar su historial académico.'})}
     await c.query('DELETE FROM courses WHERE id=$1',[id]);await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.delete',entityType:'course',entityId:id,description:`Eliminó el curso vacío ${course.name}.`,metadata:{academicYear:y.year}});res.json({ok:true,archived:false,message:'Curso eliminado.'});
   }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,500,'No se pudo borrar el curso')}finally{c.release()}
 });
