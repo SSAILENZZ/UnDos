@@ -61,9 +61,24 @@ setTimeout(stabilizeNav,0);
 })();
 
 (()=>{
-  if(document.querySelector('script[data-workflow-polish]'))return;
-  const s=document.createElement('script');
-  s.src='/workflow-polish.js?v=20260909-26';
-  s.dataset.workflowPolish='1';
-  document.head.appendChild(s);
+  const loadFinal=()=>{
+    if(document.querySelector('script[data-final-consistency]'))return;
+    const f=document.createElement('script');
+    f.src='/final-consistency.js?v=20260909-27';
+    f.dataset.finalConsistency='1';
+    document.head.appendChild(f);
+  };
+  let s=document.querySelector('script[data-workflow-polish]');
+  if(!s){
+    s=document.createElement('script');
+    s.src='/workflow-polish.js?v=20260909-26';
+    s.dataset.workflowPolish='1';
+    document.head.appendChild(s);
+  }
+  let tries=0;
+  const wait=()=>{
+    if(document.getElementById('undosWorkflowPolish')||tries++>100){loadFinal();return}
+    setTimeout(wait,20);
+  };
+  wait();
 })();
