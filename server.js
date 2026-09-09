@@ -15,6 +15,7 @@ app.use('/api',require('./routes-notification-hooks'));
 app.use('/api/notifications',require('./routes-notifications'));
 app.use('/api/dashboard',require('./routes-dashboard'));
 app.use('/api/communications',require('./routes-communications'));
+app.use('/api/exports',require('./routes-export-integrity'));
 app.use('/api/exports',require('./routes-exports'));
 app.use('/api/admin/preview',require('./routes-admin-preview-profile'));
 app.use('/api/admin/preview',require('./routes-admin-preview-planbook'));
