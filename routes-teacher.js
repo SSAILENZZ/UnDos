@@ -1,6 +1,7 @@
 const express=require('express');
 const {pool,activeYear}=require('./db');
 const {apiError,auth,requireRole}=require('./auth');
+const {recordAudit}=require('./audit');
 const r=express.Router();
 r.use(auth,requireRole('teacher'));
 
@@ -68,6 +69,7 @@ r.post('/assignments',async(req,res)=>{
       ON CONFLICT(teacher_id,subject_id,course_id,academic_year_id)
       DO UPDATE SET active=TRUE
       RETURNING id`,[req.user.id,subjectId,courseId,y.id]);
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'teacher.assignment_add',entityType:'teaching_assignment',entityId:rows[0].id,description:`Agregó ${subject.rows[0].name} en ${course.rows[0].name} a su panel docente.`,metadata:{courseId,courseName:course.rows[0].name,subjectId,subjectName:subject.rows[0].name,academicYear:y.year}});
     res.status(201).json({id:rows[0].id,courseName:course.rows[0].name,subjectName:subject.rows[0].name});
   }catch(e){console.error(e);apiError(res,500,'No se pudo agregar el curso y la materia')}
 });
@@ -125,7 +127,9 @@ r.post('/assignments/:id/attendance',async(req,res)=>{
         DO UPDATE SET status=EXCLUDED.status,recorded_by=EXCLUDED.recorded_by,updated_at=NOW()`,[a.id,studentId,date,status,req.user.id]);
     }
     await c.query('COMMIT');
-    res.json(await attendancePayload(a,date));
+    const payload=await attendancePayload(a,date);
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'attendance.update',entityType:'attendance',entityId:`${a.id}:${date}`,description:`Registró asistencia de ${a.subject_name} · ${a.course_name} para el ${date}.`,metadata:{assignmentId:a.id,date,present:payload.summary.present,absent:payload.summary.absent,unmarked:payload.summary.unmarked,total:payload.students.length}});
+    res.json(payload);
   }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,400,e.message==='Registro inválido'?'Registro de asistencia inválido':e.message==='Estudiante fuera del curso'?'El estudiante no pertenece a este curso':'No se pudo guardar la asistencia')}
   finally{c.release()}
 });
@@ -139,19 +143,21 @@ r.post('/assignments/:id/evaluations',async(req,res)=>{
     const q=await pool.query('SELECT COALESCE(SUM(weight),0)::float total FROM evaluations WHERE assignment_id=$1 AND semester=$2',[a.id,semester]);
     if(Number(q.rows[0].total)+weight>100.001)return apiError(res,400,'La ponderación total del semestre no puede superar 100%');
     const {rows}=await pool.query('INSERT INTO evaluations(assignment_id,name,eval_date,semester,weight,status) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,eval_date,semester,weight::float,status',[a.id,name,date,semester,weight,status]);
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'evaluation.create',entityType:'evaluation',entityId:rows[0].id,description:`Creó la evaluación “${name}” en ${a.subject_name} · ${a.course_name}.`,metadata:{assignmentId:a.id,date,semester,weight,status,courseName:a.course_name,subjectName:a.subject_name}});
     res.status(201).json(rows[0]);
   }catch(e){console.error(e);apiError(res,500,'No se pudo crear la evaluación')}
 });
 
 r.patch('/evaluations/:id',async(req,res)=>{
   try{
-    const id=Number(req.params.id),q=await pool.query(`SELECT ev.* FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ev.id=$1 AND ta.teacher_id=$2`,[id,req.user.id]),old=q.rows[0];
+    const id=Number(req.params.id),q=await pool.query(`SELECT ev.*,s.name subject_name,c.name course_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN courses c ON c.id=ta.course_id WHERE ev.id=$1 AND ta.teacher_id=$2`,[id,req.user.id]),old=q.rows[0];
     if(!old)return apiError(res,404,'Evaluación no encontrada');
     const name=req.body.name!==undefined?String(req.body.name).trim():old.name,semester=req.body.semester!==undefined?Number(req.body.semester):old.semester,weight=req.body.weight!==undefined?Number(req.body.weight):Number(old.weight),status=req.body.status!==undefined?req.body.status:old.status,date=req.body.date!==undefined?(req.body.date||null):old.eval_date;
     if(!name||![1,2].includes(semester)||!(weight>0&&weight<=100)||!['pending','completed'].includes(status))return apiError(res,400,'Datos de evaluación inválidos');
     const sum=await pool.query('SELECT COALESCE(SUM(weight),0)::float total FROM evaluations WHERE assignment_id=$1 AND semester=$2 AND id<>$3',[old.assignment_id,semester,id]);
     if(Number(sum.rows[0].total)+weight>100.001)return apiError(res,400,'La ponderación total del semestre no puede superar 100%');
     const {rows}=await pool.query('UPDATE evaluations SET name=$1,eval_date=$2,semester=$3,weight=$4,status=$5,updated_at=NOW() WHERE id=$6 RETURNING id,name,eval_date,semester,weight::float,status',[name,date,semester,weight,status,id]);
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'evaluation.update',entityType:'evaluation',entityId:id,description:`Editó la evaluación “${name}” en ${old.subject_name} · ${old.course_name}.`,metadata:{before:{name:old.name,date:old.eval_date?String(old.eval_date).slice(0,10):null,semester:Number(old.semester),weight:Number(old.weight),status:old.status},after:{name,date,semester,weight,status}}});
     res.json(rows[0]);
   }catch(e){console.error(e);apiError(res,500,'No se pudo actualizar la evaluación')}
 });
@@ -159,21 +165,24 @@ r.patch('/evaluations/:id',async(req,res)=>{
 r.post('/evaluations/:id/grades',async(req,res)=>{
   const c=await pool.connect();
   try{
-    const id=Number(req.params.id),q=await c.query(`SELECT ta.course_id,ta.academic_year_id FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id WHERE ev.id=$1 AND ta.teacher_id=$2`,[id,req.user.id]),ev=q.rows[0];
+    const id=Number(req.params.id),q=await c.query(`SELECT ta.course_id,ta.academic_year_id,ev.name,s.name subject_name,co.name course_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN courses co ON co.id=ta.course_id WHERE ev.id=$1 AND ta.teacher_id=$2`,[id,req.user.id]),ev=q.rows[0];
     if(!ev)return apiError(res,404,'Evaluación no encontrada');
     const grades=Array.isArray(req.body.grades)?req.body.grades:[];
     await c.query('BEGIN');
+    let saved=0,cleared=0;
     for(const item of grades){
       const studentId=Number(item.studentId),en=await c.query('SELECT 1 FROM enrollments WHERE student_id=$1 AND course_id=$2 AND academic_year_id=$3',[studentId,ev.course_id,ev.academic_year_id]);
       if(!en.rows[0])throw new Error('Estudiante fuera del curso');
-      if(item.grade===null||item.grade===''||item.grade===undefined)await c.query('DELETE FROM grades WHERE evaluation_id=$1 AND student_id=$2',[id,studentId]);
+      if(item.grade===null||item.grade===''||item.grade===undefined){await c.query('DELETE FROM grades WHERE evaluation_id=$1 AND student_id=$2',[id,studentId]);cleared++}
       else{
         const g=Number(item.grade);
         if(!Number.isFinite(g)||g<2||g>7||Math.round(g*10)!==g*10)throw new Error('Nota inválida');
-        await c.query('INSERT INTO grades(evaluation_id,student_id,grade) VALUES($1,$2,$3) ON CONFLICT(evaluation_id,student_id) DO UPDATE SET grade=EXCLUDED.grade,updated_at=NOW()',[id,studentId,g]);
+        await c.query('INSERT INTO grades(evaluation_id,student_id,grade) VALUES($1,$2,$3) ON CONFLICT(evaluation_id,student_id) DO UPDATE SET grade=EXCLUDED.grade,updated_at=NOW()',[id,studentId,g]);saved++;
       }
     }
-    await c.query('COMMIT');res.json({ok:true});
+    await c.query('COMMIT');
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'grades.update',entityType:'evaluation',entityId:id,description:`Actualizó las notas de “${ev.name}” en ${ev.subject_name} · ${ev.course_name}.`,metadata:{submitted:grades.length,saved,cleared,courseName:ev.course_name,subjectName:ev.subject_name}});
+    res.json({ok:true});
   }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,400,e.message==='Nota inválida'?'Las notas deben estar entre 2.0 y 7.0 con un decimal':'No se pudieron guardar las notas')}
   finally{c.release()}
 });
