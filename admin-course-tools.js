@@ -20,7 +20,7 @@ U.renderAdminCourses=async()=>{
   $('#content').addEventListener('click',async e=>{
     const edit=e.target.closest('[data-edit-course]'),del=e.target.closest('[data-delete-course]');
     if(edit){e.preventDefault();e.stopPropagation();const c=d.courses.find(x=>x.id===Number(edit.dataset.editCourse));if(c)openEdit(c);return}
-    if(del){e.preventDefault();e.stopPropagation();const c=d.courses.find(x=>x.id===Number(del.dataset.deleteCourse));if(!c)return;if(!confirm(`¿Borrar el curso “${c.name}”?\n\nSi tiene estudiantes, clases o historial, se archivará en vez de eliminarse definitivamente.`))return;del.disabled=true;try{const out=await U.api(`/api/admin/courses/${c.id}`,{method:'DELETE'});U.toast(out.message||'Curso eliminado');await U.renderAdminCourses()}catch(err){U.toast(err.message);del.disabled=false}}
+    if(del){e.preventDefault();e.stopPropagation();const c=d.courses.find(x=>x.id===Number(del.dataset.deleteCourse));if(!c)return;if(!confirm(`¿Borrar el curso “${c.name}”?\n\nSi aún tiene estudiantes activos matriculados, UnDos no permitirá borrarlo. Si solo contiene historial o clases antiguas, se archivará para conservar esos datos.`))return;del.disabled=true;try{const out=await U.api(`/api/admin/courses/${c.id}`,{method:'DELETE'});U.toast(out.message||'Curso eliminado');await U.renderAdminCourses()}catch(err){U.toast(err.message);del.disabled=false}}
   });
 };
 function openEdit(c){
