@@ -1,6 +1,8 @@
 const jwt=require('jsonwebtoken');
 const {pool}=require('./db');
-const SECRET=process.env.JWT_SECRET||'dev-only-change-me';
+const configuredSecret=String(process.env.JWT_SECRET||'').trim();
+if(process.env.NODE_ENV==='production'&&!configuredSecret)throw new Error('Falta JWT_SECRET en producción');
+const SECRET=configuredSecret||'dev-only-change-me';
 function apiError(res,status,error,details=null){return res.status(status).json({error,details})}
 function readCookie(req,name){const raw=req.headers.cookie||'',found=raw.split(';').map(x=>x.trim()).find(x=>x.startsWith(`${name}=`));return found?decodeURIComponent(found.slice(name.length+1)):null}
 function setSession(res,user){const token=jwt.sign({id:user.id,role:user.role},SECRET,{expiresIn:'12h'}),secure=process.env.NODE_ENV==='production'?'; Secure':'';res.setHeader('Set-Cookie',`undos_session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=43200; SameSite=Lax${secure}`)}
