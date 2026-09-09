@@ -11,7 +11,7 @@ async function getTargetYear(source){const {rows}=await pool.query('SELECT id,ye
 async function getPromotionData(){
   const source=await activeYear();const target=await getTargetYear(source);
   const [sourceCourses,targetCourses,students]=await Promise.all([
-    pool.query(`SELECT c.id,c.name,c.level_order,COUNT(e.id)::int student_count FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id AND e.academic_year_id=c.academic_year_id LEFT JOIN users u ON u.id=e.student_id AND u.role='student' AND u.active=TRUE WHERE c.academic_year_id=$1 AND c.active=TRUE GROUP BY c.id ORDER BY c.level_order,c.name`,[source.id]),
+    pool.query(`SELECT c.id,c.name,c.level_order,COUNT(u.id)::int student_count FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id AND e.academic_year_id=c.academic_year_id LEFT JOIN users u ON u.id=e.student_id AND u.role='student' AND u.active=TRUE WHERE c.academic_year_id=$1 AND c.active=TRUE GROUP BY c.id ORDER BY c.level_order,c.name`,[source.id]),
     target?pool.query('SELECT id,name,level_order,active FROM courses WHERE academic_year_id=$1 AND active=TRUE ORDER BY level_order,name',[target.id]):Promise.resolve({rows:[]}),
     pool.query(`SELECT u.id,u.rut,u.full_name,c.id source_course_id,c.name source_course_name,c.level_order source_level_order,te.id target_enrollment_id,tc.id target_course_id,tc.name target_course_name FROM enrollments e JOIN users u ON u.id=e.student_id AND u.role='student' AND u.active=TRUE JOIN courses c ON c.id=e.course_id LEFT JOIN enrollments te ON te.student_id=u.id AND te.academic_year_id=$2 LEFT JOIN courses tc ON tc.id=te.course_id WHERE e.academic_year_id=$1 ORDER BY c.level_order,c.name,u.full_name`,[source.id,target?.id||null])
   ]);
