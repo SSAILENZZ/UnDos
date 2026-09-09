@@ -1,0 +1,118 @@
+const express=require('express');
+const {pool,activeYear}=require('./db');
+const {apiError,auth,requireRole}=require('./auth');
+const r=express.Router();
+r.use(auth,requireRole('admin'));
+
+const MAX_BATCH=800;
+const sectionKey=name=>{const m=String(name||'').trim().match(/\b([A-Z])$/i);return m?m[1].toUpperCase():''};
+
+async function getTargetYear(source){
+  const {rows}=await pool.query('SELECT id,year,active FROM academic_years WHERE year=$1 LIMIT 1',[source.year+1]);
+  return rows[0]||null;
+}
+
+async function getPromotionData(){
+  const source=await activeYear();
+  const target=await getTargetYear(source);
+  const [sourceCourses,targetCourses,students]=await Promise.all([
+    pool.query(`SELECT c.id,c.name,c.level_order,COUNT(e.id)::int student_count
+      FROM courses c LEFT JOIN enrollments e ON e.course_id=c.id AND e.academic_year_id=c.academic_year_id
+      LEFT JOIN users u ON u.id=e.student_id AND u.role='student' AND u.active=TRUE
+      WHERE c.academic_year_id=$1 AND c.active=TRUE
+      GROUP BY c.id ORDER BY c.level_order,c.name`,[source.id]),
+    target?pool.query('SELECT id,name,level_order,active FROM courses WHERE academic_year_id=$1 AND active=TRUE ORDER BY level_order,name',[target.id]):Promise.resolve({rows:[]}),
+    pool.query(`SELECT u.id,u.rut,u.full_name,c.id source_course_id,c.name source_course_name,c.level_order source_level_order,
+        te.id target_enrollment_id,tc.id target_course_id,tc.name target_course_name
+      FROM enrollments e
+      JOIN users u ON u.id=e.student_id AND u.role='student' AND u.active=TRUE
+      JOIN courses c ON c.id=e.course_id
+      LEFT JOIN enrollments te ON te.student_id=u.id AND te.academic_year_id=$2
+      LEFT JOIN courses tc ON tc.id=te.course_id
+      WHERE e.academic_year_id=$1
+      ORDER BY c.level_order,c.name,u.full_name`,[source.id,target?.id||null])
+  ]);
+  const targets=targetCourses.rows;
+  const mapSuggestion=row=>{
+    if(row.target_course_id)return Number(row.target_course_id);
+    const level=Number(row.source_level_order);
+    if(!Number.isFinite(level)||level>=12)return null;
+    const candidates=targets.filter(c=>Number(c.level_order)===level+1);
+    if(!candidates.length)return null;
+    const key=sectionKey(row.source_course_name);
+    if(key){const same=candidates.find(c=>sectionKey(c.name)===key);if(same)return Number(same.id)}
+    return Number(candidates[0].id);
+  };
+  const studentRows=students.rows.map(x=>({
+    id:Number(x.id),rut:x.rut,fullName:x.full_name,
+    sourceCourseId:Number(x.source_course_id),sourceCourseName:x.source_course_name,sourceLevelOrder:Number(x.source_level_order),
+    targetEnrollmentId:x.target_enrollment_id?Number(x.target_enrollment_id):null,
+    targetCourseId:x.target_course_id?Number(x.target_course_id):null,
+    targetCourseName:x.target_course_name||null,
+    suggestedTargetCourseId:mapSuggestion(x),
+    graduating:Number(x.source_level_order)>=12
+  }));
+  return {
+    sourceYear:{id:source.id,year:source.year},
+    targetYear:target?{id:Number(target.id),year:Number(target.year),active:Boolean(target.active)}:null,
+    targetYearNumber:source.year+1,
+    sourceCourses:sourceCourses.rows.map(c=>({id:Number(c.id),name:c.name,levelOrder:Number(c.level_order),studentCount:Number(c.student_count||0)})),
+    targetCourses:targets.map(c=>({id:Number(c.id),name:c.name,levelOrder:Number(c.level_order),active:Boolean(c.active)})),
+    students:studentRows
+  };
+}
+
+r.get('/promotion',async(_req,res)=>{
+  try{res.json(await getPromotionData())}catch(e){console.error(e);apiError(res,500,'No se pudo cargar la promoción de estudiantes')}
+});
+
+r.post('/promotion/prepare',async(req,res)=>{
+  const c=await pool.connect();
+  try{
+    const source=await activeYear(c),year=Number(req.body.year||source.year+1);
+    if(!Number.isInteger(year)||year!==source.year+1)return apiError(res,400,`El año de destino debe ser ${source.year+1}`);
+    await c.query('BEGIN');
+    const tq=await c.query('INSERT INTO academic_years(year,active) VALUES($1,FALSE) ON CONFLICT(year) DO UPDATE SET year=EXCLUDED.year RETURNING id,year,active',[year]);
+    const target=tq.rows[0];
+    const {rows:courses}=await c.query('SELECT name,level_order FROM courses WHERE academic_year_id=$1 AND active=TRUE ORDER BY level_order,name',[source.id]);
+    for(const course of courses)await c.query('INSERT INTO courses(academic_year_id,name,level_order,active) VALUES($1,$2,$3,TRUE) ON CONFLICT(academic_year_id,name) DO NOTHING',[target.id,course.name,course.level_order]);
+    await c.query('COMMIT');
+    res.json({ok:true,targetYear:{id:Number(target.id),year:Number(target.year),active:Boolean(target.active)},coursesPrepared:courses.length});
+  }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,500,'No se pudo preparar el próximo año escolar')}finally{c.release()}
+});
+
+r.post('/promotion/apply',async(req,res)=>{
+  const c=await pool.connect();
+  try{
+    const source=await activeYear(c),target=await getTargetYear(source),items=Array.isArray(req.body.items)?req.body.items:[];
+    if(!target)return apiError(res,400,`Primero prepara el año ${source.year+1}`);
+    if(!items.length)return apiError(res,400,'Selecciona al menos un estudiante');
+    if(items.length>MAX_BATCH)return apiError(res,400,'Hay demasiados estudiantes en una sola operación');
+    const normalized=[];const seen=new Set();
+    for(const item of items){
+      const studentId=Number(item.studentId),targetCourseId=Number(item.targetCourseId);
+      if(!Number.isInteger(studentId)||!Number.isInteger(targetCourseId)||studentId<=0||targetCourseId<=0)return apiError(res,400,'Hay datos de promoción inválidos');
+      if(seen.has(studentId))return apiError(res,400,'Un estudiante aparece más de una vez');
+      seen.add(studentId);normalized.push({studentId,targetCourseId});
+    }
+    const studentIds=normalized.map(x=>x.studentId),courseIds=[...new Set(normalized.map(x=>x.targetCourseId))];
+    const [eligibleQ,coursesQ]=await Promise.all([
+      c.query(`SELECT e.student_id FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.academic_year_id=$1 AND e.student_id=ANY($2::int[]) AND u.role='student' AND u.active=TRUE`,[source.id,studentIds]),
+      c.query('SELECT id FROM courses WHERE academic_year_id=$1 AND active=TRUE AND id=ANY($2::int[])',[target.id,courseIds])
+    ]);
+    const eligible=new Set(eligibleQ.rows.map(x=>Number(x.student_id))),validCourses=new Set(coursesQ.rows.map(x=>Number(x.id)));
+    if(eligible.size!==studentIds.length)return apiError(res,400,'Uno o más estudiantes ya no pertenecen al año activo');
+    if(validCourses.size!==courseIds.length)return apiError(res,400,'Uno o más cursos de destino no pertenecen al próximo año');
+    await c.query('BEGIN');
+    let promoted=0,already=0;
+    for(const item of normalized){
+      const existing=await c.query('SELECT course_id FROM enrollments WHERE student_id=$1 AND academic_year_id=$2',[item.studentId,target.id]);
+      if(existing.rows[0]){already++;continue}
+      await c.query('INSERT INTO enrollments(student_id,course_id,academic_year_id) VALUES($1,$2,$3)',[item.studentId,item.targetCourseId,target.id]);promoted++;
+    }
+    await c.query('COMMIT');
+    res.json({ok:true,promoted,already,targetYear:Number(target.year)});
+  }catch(e){await c.query('ROLLBACK').catch(()=>{});if(e.code==='23505')return apiError(res,409,'Una matrícula del próximo año ya existe');console.error(e);apiError(res,500,'No se pudo completar la promoción de estudiantes')}finally{c.release()}
+});
+
+module.exports=r;
