@@ -23,7 +23,7 @@ r.get('/audit-log',async(req,res)=>{
       pool.query('SELECT action,COUNT(*)::int total FROM audit_log GROUP BY action ORDER BY total DESC,action'),
       pool.query('SELECT entity_type,COUNT(*)::int total FROM audit_log GROUP BY entity_type ORDER BY total DESC,entity_type'),
       pool.query(`SELECT DISTINCT u.id,u.full_name,u.role FROM audit_log al JOIN users u ON u.id=al.actor_id ORDER BY u.full_name`),
-      pool.query(`SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE created_at>=CURRENT_DATE)::int today,COUNT(*) FILTER(WHERE created_at>=NOW()-INTERVAL '7 days')::int last7,COUNT(DISTINCT actor_id)::int actors FROM audit_log`)
+      pool.query(`SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE created_at>=((CURRENT_TIMESTAMP AT TIME ZONE 'America/Santiago')::date AT TIME ZONE 'America/Santiago'))::int today,COUNT(*) FILTER(WHERE created_at>=NOW()-INTERVAL '7 days')::int last7,COUNT(DISTINCT actor_id)::int actors FROM audit_log`)
     ]);
     const s=summary.rows[0]||{};
     res.json({summary:{total:Number(s.total||0),today:Number(s.today||0),last7:Number(s.last7||0),actors:Number(s.actors||0)},logs:logs.rows.map(x=>({id:Number(x.id),actorId:x.actor_id?Number(x.actor_id):null,actorName:x.actor_name,actorRole:x.actor_role,action:x.action,entityType:x.entity_type,entityId:x.entity_id,description:x.description,metadata:x.metadata||{},createdAt:x.created_at})),actions:actions.rows,entities:entities.rows,actors:actors.rows});
