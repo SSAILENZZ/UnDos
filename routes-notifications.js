@@ -13,7 +13,7 @@ r.get('/',async(req,res)=>{
     if(req.user.role==='student')await syncUpcomingEvaluations(req.user.id).catch(e=>console.error('notification reminder sync:',e.message));
     const limit=Math.max(1,Math.min(100,Number(req.query.limit)||50));
     const [items,count]=await Promise.all([
-      pool.query(`SELECT id,type,priority,title,body,link_page,entity_type,entity_id,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY read_at NULLS FIRST,created_at DESC LIMIT $2`,[req.user.id,limit]),
+      pool.query(`SELECT id,type,priority,title,body,link_page,entity_type,entity_id,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY (read_at IS NULL) DESC,created_at DESC LIMIT $2`,[req.user.id,limit]),
       pool.query('SELECT COUNT(*)::int unread FROM notifications WHERE user_id=$1 AND read_at IS NULL',[req.user.id])
     ]);
     res.json({unread:Number(count.rows[0]?.unread||0),notifications:items.rows.map(mapRow)});
