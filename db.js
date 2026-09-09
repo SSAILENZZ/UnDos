@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const {chileYear}=require('./date-utils');
 
 if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -41,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_evaluations_assignment ON evaluations(assignment_
 CREATE INDEX IF NOT EXISTS idx_grades_eval_student ON grades(evaluation_id,student_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_assignment_date ON attendance_records(assignment_id,attendance_date);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance_records(student_id,attendance_date);`);
-  const yearNum=new Date().getFullYear();
+  const yearNum=chileYear();
   await pool.query('INSERT INTO academic_years(year,active) VALUES($1,FALSE) ON CONFLICT(year) DO NOTHING',[yearNum]);
   const anyActive=await pool.query('SELECT 1 FROM academic_years WHERE active=TRUE LIMIT 1');if(!anyActive.rows[0])await pool.query('UPDATE academic_years SET active=(year=$1)',[yearNum]);
   const year=await activeYear();
