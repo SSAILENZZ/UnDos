@@ -8,7 +8,7 @@ async function buildAttendance(studentId){
   const y=await activeYear();
   const en=await pool.query(`SELECT e.course_id,c.name course_name
     FROM enrollments e JOIN courses c ON c.id=e.course_id
-    WHERE e.student_id=$1 AND e.academic_year_id=$2 LIMIT 1`,[studentId,y.id]);
+    WHERE e.student_id=$1 AND e.academic_year_id=$2 AND c.active=TRUE LIMIT 1`,[studentId,y.id]);
   if(!en.rows[0])return {activeYear:y,course:null,summary:{total:0,present:0,absent:0,days:0,percentage:null},subjects:[],records:[]};
   const course=en.rows[0];
   const {rows}=await pool.query(`SELECT ar.attendance_date::text date,ar.status,
