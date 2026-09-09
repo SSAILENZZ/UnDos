@@ -8,7 +8,11 @@ document.head.appendChild(style);
 
 const schoolYear=()=>Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Santiago',year:'numeric'}).format(new Date()));
 const baseOpen=U.openModal;
-if(typeof baseOpen==='function')U.openModal=(title,html)=>{const out=baseOpen(title,html);if(title==='Nuevo año escolar'){const input=document.querySelector('#yearV2Form input[name="year"]');if(input)input.value=String(schoolYear()+1)}return out};
+if(typeof baseOpen==='function')U.openModal=(title,html)=>{const out=baseOpen(title,html);if(title==='Nuevo año escolar'){const input=document.querySelector('#yearV2Form input[name="year"]');if(input)input.value=String(schoolYear()+1)}setTimeout(cleanAssignmentSubjectOptions,0);return out};
+
+function cleanAssignmentSubjectOptions(){const select=document.querySelector('#assignmentV2Form select[name="subjectId"]');if(!select)return;const subjects=S.admin?.subjects||[];[...select.options].forEach(o=>{const s=subjects.find(x=>Number(x.id)===Number(o.value));if(s&&s.active===false)o.remove()});if(select.options.length&&!select.value)select.selectedIndex=0}
+
+document.addEventListener('click',()=>setTimeout(cleanAssignmentSubjectOptions,0),true);
 
 let previewRequest=0;
 async function fixTeacherPreviewCount(){
