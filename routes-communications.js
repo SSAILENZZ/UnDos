@@ -1,0 +1,55 @@
+const express=require('express');
+const {pool,activeYear}=require('./db');
+const {apiError,auth,requireRole}=require('./auth');
+const r=express.Router();
+r.use(auth);
+
+let ready=null;
+function ensureSchema(){
+  if(!ready)ready=pool.query(`
+    CREATE TABLE IF NOT EXISTS announcements(
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      audience TEXT NOT NULL DEFAULT 'all' CHECK(audience IN ('all','students','teachers','course')),
+      course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('normal','important')),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      expires_on DATE,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_announcements_active_created ON announcements(active,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_announcements_course ON announcements(course_id);
+  `).catch(e=>{ready=null;throw e});
+  return ready;
+}
+function cleanText(v,max){return String(v||'').trim().slice(0,max)}
+function validDate(v){return !v||(/^\d{4}-\d{2}-\d{2}$/.test(String(v))&&!Number.isNaN(Date.parse(`${v}T00:00:00Z`)))}
+function mapRow(x){return {id:x.id,title:x.title,body:x.body,audience:x.audience,courseId:x.course_id||null,courseName:x.course_name||null,priority:x.priority,active:x.active,expiresOn:x.expires_on?String(x.expires_on).slice(0,10):null,createdAt:x.created_at,updatedAt:x.updated_at,authorName:x.author_name||'Administración'}}
+async function courseForStudent(userId,yearId){const q=await pool.query('SELECT course_id FROM enrollments WHERE student_id=$1 AND academic_year_id=$2 LIMIT 1',[userId,yearId]);return q.rows[0]?.course_id||null}
+async function feedFor(role,userId){
+  await ensureSchema();const y=await activeYear();let courseId=null;
+  if(role==='student')courseId=await courseForStudent(userId,y.id);
+  let where="a.active=TRUE AND (a.expires_on IS NULL OR a.expires_on>=CURRENT_DATE)";const params=[];
+  if(role==='student'){params.push(courseId);where+=` AND (a.audience='all' OR a.audience='students' OR (a.audience='course' AND a.course_id=$${params.length}))`}
+  else if(role==='teacher')where+=" AND a.audience IN ('all','teachers')";
+  else where+='';
+  const {rows}=await pool.query(`SELECT a.*,c.name course_name,u.full_name author_name FROM announcements a LEFT JOIN courses c ON c.id=a.course_id LEFT JOIN users u ON u.id=a.created_by WHERE ${where} ORDER BY CASE WHEN a.priority='important' THEN 0 ELSE 1 END,a.created_at DESC LIMIT 100`,params);
+  return {activeYear:y,courseId,announcements:rows.map(mapRow)};
+}
+
+r.get('/feed',async(req,res)=>{try{if(!['student','teacher','admin'].includes(req.user.role))return apiError(res,403,'Rol no autorizado');res.json(await feedFor(req.user.role,req.user.id))}catch(e){console.error(e);apiError(res,500,'No se pudieron cargar los comunicados')}});
+
+r.get('/admin',requireRole('admin'),async(_req,res)=>{try{await ensureSchema();const y=await activeYear();const [items,courses]=await Promise.all([pool.query(`SELECT a.*,c.name course_name,u.full_name author_name FROM announcements a LEFT JOIN courses c ON c.id=a.course_id LEFT JOIN users u ON u.id=a.created_by ORDER BY a.active DESC,a.created_at DESC LIMIT 250`),pool.query('SELECT id,name FROM courses WHERE academic_year_id=$1 AND active=TRUE ORDER BY level_order,name',[y.id])]);res.json({activeYear:y,announcements:items.rows.map(mapRow),courses:courses.rows})}catch(e){console.error(e);apiError(res,500,'No se pudieron cargar los comunicados')}});
+
+r.post('/admin',requireRole('admin'),async(req,res)=>{try{await ensureSchema();const title=cleanText(req.body.title,120),body=cleanText(req.body.body,4000),audience=String(req.body.audience||'all'),priority=String(req.body.priority||'normal'),courseId=audience==='course'?Number(req.body.courseId):null,expiresOn=req.body.expiresOn?String(req.body.expiresOn):null;if(!title||!body)return apiError(res,400,'Escribe un título y un comunicado');if(!['all','students','teachers','course'].includes(audience))return apiError(res,400,'Destinatario no válido');if(!['normal','important'].includes(priority))return apiError(res,400,'Prioridad no válida');if(audience==='course'&&(!Number.isInteger(courseId)||courseId<=0))return apiError(res,400,'Selecciona un curso');if(!validDate(expiresOn))return apiError(res,400,'Fecha de vencimiento no válida');if(courseId){const y=await activeYear(),q=await pool.query('SELECT id FROM courses WHERE id=$1 AND academic_year_id=$2 AND active=TRUE',[courseId,y.id]);if(!q.rowCount)return apiError(res,400,'El curso seleccionado no está disponible')}const {rows}=await pool.query(`INSERT INTO announcements(title,body,audience,course_id,priority,expires_on,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[title,body,audience,courseId,priority,expiresOn||null,req.user.id]);res.status(201).json(mapRow(rows[0]))}catch(e){console.error(e);apiError(res,500,'No se pudo publicar el comunicado')}});
+
+r.patch('/admin/:id',requireRole('admin'),async(req,res)=>{try{await ensureSchema();const id=Number(req.params.id),old=(await pool.query('SELECT * FROM announcements WHERE id=$1',[id])).rows[0];if(!old)return apiError(res,404,'Comunicado no encontrado');const title=req.body.title===undefined?old.title:cleanText(req.body.title,120),body=req.body.body===undefined?old.body:cleanText(req.body.body,4000),audience=req.body.audience===undefined?old.audience:String(req.body.audience),priority=req.body.priority===undefined?old.priority:String(req.body.priority),active=req.body.active===undefined?old.active:Boolean(req.body.active),courseId=audience==='course'?(req.body.courseId===undefined?old.course_id:Number(req.body.courseId)):null,expiresOn=req.body.expiresOn===undefined?(old.expires_on?String(old.expires_on).slice(0,10):null):(req.body.expiresOn||null);if(!title||!body)return apiError(res,400,'El comunicado necesita título y contenido');if(!['all','students','teachers','course'].includes(audience)||!['normal','important'].includes(priority))return apiError(res,400,'Datos no válidos');if(audience==='course'&&(!Number.isInteger(courseId)||courseId<=0))return apiError(res,400,'Selecciona un curso');if(!validDate(expiresOn))return apiError(res,400,'Fecha no válida');const {rows}=await pool.query(`UPDATE announcements SET title=$1,body=$2,audience=$3,course_id=$4,priority=$5,active=$6,expires_on=$7,updated_at=NOW() WHERE id=$8 RETURNING *`,[title,body,audience,courseId,priority,active,expiresOn||null,id]);res.json(mapRow(rows[0]))}catch(e){console.error(e);apiError(res,500,'No se pudo actualizar el comunicado')}});
+
+r.delete('/admin/:id',requireRole('admin'),async(req,res)=>{try{await ensureSchema();const q=await pool.query('UPDATE announcements SET active=FALSE,updated_at=NOW() WHERE id=$1 RETURNING id',[Number(req.params.id)]);if(!q.rowCount)return apiError(res,404,'Comunicado no encontrado');res.json({ok:true})}catch(e){console.error(e);apiError(res,500,'No se pudo archivar el comunicado')}});
+
+r.get('/preview/:role/:id',requireRole('admin'),async(req,res)=>{try{const role=String(req.params.role),id=Number(req.params.id);if(!['student','teacher'].includes(role))return apiError(res,400,'Vista no válida');const q=await pool.query('SELECT id,role,active FROM users WHERE id=$1 AND role=$2',[id,role]);if(!q.rows[0]?.active)return apiError(res,404,'Usuario no encontrado');res.json(await feedFor(role,id))}catch(e){console.error(e);apiError(res,500,'No se pudieron cargar los comunicados de la vista previa')}});
+
+module.exports=r;
