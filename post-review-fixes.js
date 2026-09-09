@@ -18,6 +18,9 @@ async function reactivateCourse(id,button){const c=S.admin?.courses?.find(x=>Num
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-reactivate-course]');if(b){e.preventDefault();e.stopPropagation();reactivateCourse(b.dataset.reactivateCourse,b)}setTimeout(()=>{cleanAssignmentOptions();fixAdminCourseCards()},0)},true);
 
+const baseCourses=U.renderAdminCourses;
+if(typeof baseCourses==='function')U.renderAdminCourses=async()=>{const out=await baseCourses();setTimeout(()=>{cleanAssignmentOptions();fixAdminCourseCards()},0);return out};
+
 let previewRequest=0;
 async function fixTeacherPreviewCount(){if(S.adminPreview?.sample||S.adminPreview?.role!=='teacher')return;const id=Number(S.adminPreview.user?.id);if(!id)return;const token=++previewRequest;try{const d=await U.api(`/api/admin/preview/teacher/${id}`);if(token!==previewRequest||S.adminPreview?.user?.id!==id)return;const stats=[...document.querySelectorAll('#content .stat')];const card=stats.find(x=>/Estudiantes/i.test(x.querySelector('span')?.textContent||''));const strong=card?.querySelector('strong');if(strong&&d.studentTotal!=null)strong.textContent=String(d.studentTotal)}catch{}}
 const baseNav=U.navigate;
