@@ -1,10 +1,10 @@
 const express=require('express');
 const {pool,activeYear}=require('./db');
 const {apiError,auth,requireRole}=require('./auth');
+const {recordAudit}=require('./audit');
 const r=express.Router();
 r.use(auth,requireRole('admin'));
 
-/* Vista administrativa limpia: no mezcla cursos archivados con los activos. */
 r.get('/overview',async(_req,res)=>{
   try{
     const y=await activeYear();
@@ -25,7 +25,9 @@ r.patch('/courses/:id',async(req,res)=>{
     const q=await pool.query('SELECT * FROM courses WHERE id=$1 AND academic_year_id=$2',[id,y.id]),old=q.rows[0];if(!old)return apiError(res,404,'Curso no encontrado');
     const name=req.body.name!==undefined?String(req.body.name).trim():old.name,levelOrder=req.body.levelOrder!==undefined?Number(req.body.levelOrder):old.level_order;
     if(!name||!Number.isFinite(levelOrder))return apiError(res,400,'Datos del curso inválidos');
-    const {rows}=await pool.query('UPDATE courses SET name=$1,level_order=$2 WHERE id=$3 RETURNING id,name,level_order,active',[name,levelOrder,id]);res.json(rows[0]);
+    const {rows}=await pool.query('UPDATE courses SET name=$1,level_order=$2 WHERE id=$3 RETURNING id,name,level_order,active',[name,levelOrder,id]);
+    await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.update',entityType:'course',entityId:id,description:`Editó el curso ${old.name} → ${name}.`,metadata:{before:{name:old.name,levelOrder:Number(old.level_order)},after:{name,levelOrder},academicYear:y.year}});
+    res.json(rows[0]);
   }catch(e){if(e.code==='23505')return apiError(res,409,'Ya existe un curso con ese nombre este año');console.error(e);apiError(res,500,'No se pudo editar el curso')}
 });
 
@@ -34,12 +36,11 @@ r.delete('/courses/:id',async(req,res)=>{
   try{
     const id=Number(req.params.id),y=await activeYear(c);
     const q=await c.query('SELECT id,name FROM courses WHERE id=$1 AND academic_year_id=$2 AND active=TRUE',[id,y.id]);if(!q.rows[0])return apiError(res,404,'Curso no encontrado');
-    const deps=await c.query(`SELECT
-      (SELECT COUNT(*)::int FROM enrollments WHERE course_id=$1) enrollments,
-      (SELECT COUNT(*)::int FROM teaching_assignments WHERE course_id=$1) assignments`,[id]);
+    const course=q.rows[0];
+    const deps=await c.query(`SELECT (SELECT COUNT(*)::int FROM enrollments WHERE course_id=$1) enrollments,(SELECT COUNT(*)::int FROM teaching_assignments WHERE course_id=$1) assignments`,[id]);
     const hasData=Number(deps.rows[0].enrollments)>0||Number(deps.rows[0].assignments)>0;
-    if(hasData){await c.query('BEGIN');await c.query('UPDATE courses SET active=FALSE WHERE id=$1',[id]);await c.query('UPDATE teaching_assignments SET active=FALSE WHERE course_id=$1',[id]);await c.query('COMMIT');return res.json({ok:true,archived:true,message:'El curso fue archivado para conservar su historial académico.'})}
-    await c.query('DELETE FROM courses WHERE id=$1',[id]);res.json({ok:true,archived:false,message:'Curso eliminado.'});
+    if(hasData){await c.query('BEGIN');await c.query('UPDATE courses SET active=FALSE WHERE id=$1',[id]);await c.query('UPDATE teaching_assignments SET active=FALSE WHERE course_id=$1',[id]);await c.query('COMMIT');await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.archive',entityType:'course',entityId:id,description:`Archivó el curso ${course.name} para conservar su historial.`,metadata:{academicYear:y.year,enrollments:Number(deps.rows[0].enrollments),assignments:Number(deps.rows[0].assignments)}});return res.json({ok:true,archived:true,message:'El curso fue archivado para conservar su historial académico.'})}
+    await c.query('DELETE FROM courses WHERE id=$1',[id]);await recordAudit({actorId:req.user.id,actorRole:req.user.role,action:'course.delete',entityType:'course',entityId:id,description:`Eliminó el curso vacío ${course.name}.`,metadata:{academicYear:y.year}});res.json({ok:true,archived:false,message:'Curso eliminado.'});
   }catch(e){await c.query('ROLLBACK').catch(()=>{});console.error(e);apiError(res,500,'No se pudo borrar el curso')}finally{c.release()}
 });
 module.exports=r;
