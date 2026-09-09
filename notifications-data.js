@@ -1,5 +1,6 @@
 const {pool,activeYear}=require('./db');
 
+const CHILE_TODAY=`(CURRENT_TIMESTAMP AT TIME ZONE 'America/Santiago')::date`;
 let ready=null;
 function ensureNotificationSchema(){
   if(!ready)ready=pool.query(`
@@ -35,7 +36,7 @@ async function createNotification({userId,type='info',priority='normal',title,bo
   return rows[0]?.id||null;
 }
 async function activeCourseStudents(courseId,yearId){
-  const {rows}=await pool.query(`SELECT u.id FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.role='student' AND u.active=TRUE`,[Number(courseId),Number(yearId)]);return rows.map(x=>Number(x.id));
+  const {rows}=await pool.query(`SELECT u.id FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.role='student' AND u.active=TRUE AND c.active=TRUE`,[Number(courseId),Number(yearId)]);return rows.map(x=>Number(x.id));
 }
 async function notifyCourse(courseId,yearId,data){const ids=await activeCourseStudents(courseId,yearId);await Promise.all(ids.map(userId=>createNotification({...data,userId})));return ids.length}
 async function notifyAnnouncement(announcementId){
@@ -45,23 +46,23 @@ async function notifyAnnouncement(announcementId){
   if(a.audience==='all')q=`SELECT id,role FROM users WHERE active=TRUE AND role IN ('student','teacher')`;
   else if(a.audience==='students')q=`SELECT id,role FROM users WHERE active=TRUE AND role='student'`;
   else if(a.audience==='teachers')q=`SELECT id,role FROM users WHERE active=TRUE AND role='teacher'`;
-  else{q=`SELECT DISTINCT u.id,u.role FROM enrollments e JOIN users u ON u.id=e.student_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.active=TRUE AND u.role='student'`;params=[a.course_id,a.academic_year_id]}
+  else{q=`SELECT DISTINCT u.id,u.role FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id WHERE e.course_id=$1 AND e.academic_year_id=$2 AND u.active=TRUE AND u.role='student' AND c.active=TRUE`;params=[a.course_id,a.academic_year_id]}
   const recipients=(await pool.query(q,params)).rows;const important=a.priority==='important';
-  await Promise.all(recipients.map(x=>createNotification({userId:x.id,type:'announcement',priority:important?'important':'normal',title:important?'Comunicado importante': 'Nuevo comunicado',body:a.title,linkPage:'communications',entityType:'announcement',entityId:a.id,dedupeKey:`announcement:${a.id}`})));
+  await Promise.all(recipients.map(x=>createNotification({userId:x.id,type:'announcement',priority:important?'important':'normal',title:important?'Comunicado importante':'Nuevo comunicado',body:a.title,linkPage:'communications',entityType:'announcement',entityId:a.id,dedupeKey:`announcement:${a.id}`})));
   return recipients.length;
 }
 async function notifyEvaluation(evaluationId,{updated=false}={}){
-  const {rows}=await pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,ta.course_id,ta.academic_year_id,s.name subject_name,c.name course_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN courses c ON c.id=ta.course_id WHERE ev.id=$1`,[Number(evaluationId)]);const e=rows[0];if(!e)return 0;
+  const {rows}=await pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,ta.course_id,ta.academic_year_id,s.name subject_name,c.name course_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id JOIN courses c ON c.id=ta.course_id WHERE ev.id=$1 AND ta.active=TRUE AND c.active=TRUE`,[Number(evaluationId)]);const e=rows[0];if(!e)return 0;
   const date=e.date||'sin fecha definida',body=`${e.subject_name} · ${e.name} · ${date}${e.weight?` · ${Number(e.weight)}%`:''}`;
   return notifyCourse(e.course_id,e.academic_year_id,{type:'evaluation',priority:'important',title:updated?'Evaluación actualizada':'Nueva evaluación programada',body,linkPage:'student-calendar',entityType:'evaluation',entityId:e.id,dedupeKey:`evaluation:${e.id}:${e.date||'none'}:${e.name}:${Number(e.weight||0)}`});
 }
 async function notifyGrades(evaluationId,grades){
-  const {rows}=await pool.query(`SELECT ev.id,ev.name,s.name subject_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id WHERE ev.id=$1`,[Number(evaluationId)]);const e=rows[0];if(!e)return 0;let total=0;
+  const {rows}=await pool.query(`SELECT ev.id,ev.name,s.name subject_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id WHERE ev.id=$1 AND ta.active=TRUE`,[Number(evaluationId)]);const e=rows[0];if(!e)return 0;let total=0;
   for(const item of Array.isArray(grades)?grades:[]){const studentId=Number(item.studentId),g=Number(item.grade);if(!Number.isInteger(studentId)||!Number.isFinite(g)||g<2||g>7)continue;await createNotification({userId:studentId,type:'grade',priority:'important',title:'Nueva calificación',body:`${e.subject_name} · ${e.name}: ${g.toFixed(1)}`,linkPage:'student-home',entityType:'evaluation',entityId:e.id,dedupeKey:`grade:${e.id}:${studentId}:${g.toFixed(1)}`});total++}return total;
 }
 async function syncUpcomingEvaluations(userId){
-  const y=await activeYear();const en=(await pool.query(`SELECT course_id FROM enrollments WHERE student_id=$1 AND academic_year_id=$2 LIMIT 1`,[Number(userId),y.id])).rows[0];if(!en)return;
-  const {rows}=await pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,s.name subject_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.course_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND ev.eval_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '3 days' ORDER BY ev.eval_date,s.name`,[en.course_id,y.id]);
+  const y=await activeYear();const en=(await pool.query(`SELECT e.course_id FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=$1 AND e.academic_year_id=$2 AND c.active=TRUE LIMIT 1`,[Number(userId),y.id])).rows[0];if(!en)return;
+  const {rows}=await pool.query(`SELECT ev.id,ev.name,ev.eval_date::text date,ev.weight::float,s.name subject_name FROM evaluations ev JOIN teaching_assignments ta ON ta.id=ev.assignment_id JOIN subjects s ON s.id=ta.subject_id WHERE ta.course_id=$1 AND ta.academic_year_id=$2 AND ta.active=TRUE AND ev.eval_date BETWEEN ${CHILE_TODAY} AND ${CHILE_TODAY}+INTERVAL '3 days' ORDER BY ev.eval_date,s.name`,[en.course_id,y.id]);
   for(const e of rows)await createNotification({userId,type:'reminder',priority:'important',title:'Evaluación próxima',body:`${e.subject_name} · ${e.name} · ${e.date}${e.weight?` · ${Number(e.weight)}%`:''}`,linkPage:'student-calendar',entityType:'evaluation',entityId:e.id,dedupeKey:`reminder:${e.id}:${e.date}`});
 }
 module.exports={ensureNotificationSchema,createNotification,notifyCourse,notifyAnnouncement,notifyEvaluation,notifyGrades,syncUpcomingEvaluations};
