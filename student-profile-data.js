@@ -17,7 +17,8 @@ async function yearProfile(studentId,enrollment){
       LEFT JOIN users u ON u.id=ta.teacher_id
       LEFT JOIN evaluations ev ON ev.assignment_id=ta.id
       LEFT JOIN grades g ON g.evaluation_id=ev.id AND g.student_id=$1
-      WHERE ta.course_id=$2 AND ta.academic_year_id=$3 AND ($4::boolean=FALSE OR ta.active=TRUE)
+      WHERE ta.course_id=$2 AND ta.academic_year_id=$3
+        AND ($4::boolean=FALSE OR (ta.active=TRUE AND s.active=TRUE AND COALESCE(u.active,FALSE)=TRUE))
       ORDER BY s.name,ta.id,ev.semester,ev.eval_date NULLS LAST,ev.id`,[studentId,enrollment.course_id,enrollment.academic_year_id,activeYear]),
     pool.query(`SELECT ar.attendance_date::text date,ar.status
       FROM attendance_records ar
@@ -37,7 +38,7 @@ async function yearProfile(studentId,enrollment){
   const present=attendance.rows.filter(x=>x.status==='present').length,absent=attendance.rows.filter(x=>x.status==='absent').length,total=present+absent;
   const evaluations=subjects.reduce((n,s)=>n+s.evaluations.length,0),completed=subjects.reduce((n,s)=>n+s.evaluations.filter(e=>e.status==='completed').length,0);
   return {
-    yearId:Number(enrollment.academic_year_id),year:Number(enrollment.year),active:activeYear,
+    yearId:Number(enrollment.academic_year_id),year:Number(enrollment.year),active:activeYear,courseActive:Boolean(enrollment.course_active),
     course:{id:Number(enrollment.course_id),name:enrollment.course_name},
     subjects,overall:mapOverall(subjects),gradeAverage:gradeValues.length?round1(gradeValues.reduce((a,b)=>a+b,0)/gradeValues.length):null,
     attendance:{total,present,absent,days:new Set(attendance.rows.map(x=>x.date)).size,percentage:total?round1(present*100/total):null},
@@ -50,13 +51,13 @@ async function buildStudentProfile(studentId){
   const [userQ,year,enrollmentsQ]=await Promise.all([
     pool.query("SELECT id,rut,full_name,role,active,created_at,updated_at FROM users WHERE id=$1 AND role='student'",[id]),
     activeYear(),
-    pool.query(`SELECT e.academic_year_id,e.course_id,c.name course_name,ay.year,ay.active year_active
+    pool.query(`SELECT e.academic_year_id,e.course_id,c.name course_name,c.active course_active,ay.year,ay.active year_active
       FROM enrollments e JOIN courses c ON c.id=e.course_id JOIN academic_years ay ON ay.id=e.academic_year_id
       WHERE e.student_id=$1 ORDER BY ay.year DESC`,[id])
   ]);
   const user=userQ.rows[0];if(!user)return null;
   const years=[];for(const en of enrollmentsQ.rows)years.push(await yearProfile(id,en));
-  const current=years.find(x=>x.yearId===Number(year.id))||null;
+  const current=years.find(x=>x.yearId===Number(year.id)&&x.courseActive)||null;
   const attendanceTotal=years.reduce((n,x)=>n+x.attendance.total,0),attendancePresent=years.reduce((n,x)=>n+x.attendance.present,0);
   return {
     user:{id:Number(user.id),rut:user.rut,fullName:user.full_name,role:user.role,active:Boolean(user.active),createdAt:user.created_at,updatedAt:user.updated_at},
