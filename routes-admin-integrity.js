@@ -6,8 +6,9 @@ const {recordAudit}=require('./audit');
 const r=express.Router();
 r.use(auth,requireRole('admin'));
 
-const parseBool=v=>v===true||v===1||v==='1'||String(v).toLowerCase()==='true';
+const parseBool=v=>{if(v===true||v===1||v==='1'||String(v).toLowerCase()==='true')return true;if(v===false||v===0||v==='0'||String(v).toLowerCase()==='false')return false;return null};
 const optionalId=v=>v===undefined||v===null||v===''?null:Number(v);
+const positiveInt=v=>Number.isInteger(v)&&v>0;
 
 r.post('/users',async(req,res)=>{
   const c=await pool.connect();
@@ -17,7 +18,7 @@ r.post('/users',async(req,res)=>{
     if(!fullName)return apiError(res,400,'Falta el nombre');
     if(!['student','teacher','admin'].includes(role))return apiError(res,400,'Rol inválido');
     if(password.length<8)return apiError(res,400,'La contraseña debe tener al menos 8 caracteres');
-    if(courseId!==null&&(!Number.isInteger(courseId)||courseId<=0))return apiError(res,400,'Curso inválido');
+    if(courseId!==null&&!positiveInt(courseId))return apiError(res,400,'Curso inválido');
     await c.query('BEGIN');
     const y=await activeYear(c);let course=null;
     if(role==='student'&&courseId!==null){const q=await c.query('SELECT id,name FROM courses WHERE id=$1 AND academic_year_id=$2 AND active=TRUE',[courseId,y.id]);course=q.rows[0];if(!course){await c.query('ROLLBACK');return apiError(res,400,'El curso no pertenece al año escolar activo o está archivado')}}
@@ -32,10 +33,12 @@ r.post('/users',async(req,res)=>{
 r.patch('/users/:id',async(req,res)=>{
   const c=await pool.connect();
   try{
-    const id=Number(req.params.id);if(!Number.isInteger(id)||id<=0)return apiError(res,400,'Usuario inválido');
+    const id=Number(req.params.id);if(!positiveInt(id))return apiError(res,400,'Usuario inválido');
     await c.query('BEGIN');
     const q=await c.query('SELECT * FROM users WHERE id=$1 FOR UPDATE',[id]),old=q.rows[0];if(!old){await c.query('ROLLBACK');return apiError(res,404,'Usuario no encontrado')}
-    const rut=req.body.rut!==undefined?normalizeRut(req.body.rut):old.rut,fullName=req.body.fullName!==undefined?String(req.body.fullName).trim():old.full_name,role=req.body.role!==undefined?String(req.body.role):old.role,active=req.body.active!==undefined?parseBool(req.body.active):old.active;
+    const rut=req.body.rut!==undefined?normalizeRut(req.body.rut):old.rut,fullName=req.body.fullName!==undefined?String(req.body.fullName).trim():old.full_name,role=req.body.role!==undefined?String(req.body.role):old.role,parsedActive=req.body.active!==undefined?parseBool(req.body.active):old.active;
+    if(parsedActive===null){await c.query('ROLLBACK');return apiError(res,400,'Estado de cuenta inválido')}
+    const active=parsedActive;
     if(!validateRut(rut)||!fullName||!['student','teacher','admin'].includes(role)){await c.query('ROLLBACK');return apiError(res,400,'Datos inválidos')}
     if(id===req.user.id&&!active){await c.query('ROLLBACK');return apiError(res,400,'No puedes desactivar tu propia cuenta')}
     if(id===req.user.id&&role!=='admin'){await c.query('ROLLBACK');return apiError(res,400,'No puedes cambiar tu propio rol de administrador')}
@@ -52,7 +55,7 @@ r.patch('/users/:id',async(req,res)=>{
 r.post('/enrollments',async(req,res)=>{
   try{
     const studentId=Number(req.body.studentId),courseId=Number(req.body.courseId),y=await activeYear();
-    if(!Number.isInteger(studentId)||!Number.isInteger(courseId))return apiError(res,400,'Datos de matrícula inválidos');
+    if(!positiveInt(studentId)||!positiveInt(courseId))return apiError(res,400,'Datos de matrícula inválidos');
     const [s,course,old]=await Promise.all([
       pool.query("SELECT id,full_name FROM users WHERE id=$1 AND role='student' AND active=TRUE",[studentId]),
       pool.query('SELECT id,name FROM courses WHERE id=$1 AND academic_year_id=$2 AND active=TRUE',[courseId,y.id]),
@@ -69,7 +72,7 @@ r.post('/enrollments',async(req,res)=>{
 r.post('/assignments',async(req,res)=>{
   try{
     const teacherId=Number(req.body.teacherId),subjectId=Number(req.body.subjectId),courseId=Number(req.body.courseId),y=await activeYear();
-    if(![teacherId,subjectId,courseId].every(Number.isInteger))return apiError(res,400,'Datos de asignación inválidos');
+    if(![teacherId,subjectId,courseId].every(positiveInt))return apiError(res,400,'Datos de asignación inválidos');
     const [t,s,c,existing]=await Promise.all([
       pool.query("SELECT id,full_name FROM users WHERE id=$1 AND role='teacher' AND active=TRUE",[teacherId]),
       pool.query('SELECT id,name FROM subjects WHERE id=$1 AND active=TRUE',[subjectId]),
