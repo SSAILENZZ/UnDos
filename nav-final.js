@@ -59,3 +59,11 @@ const oldNavigate=U.navigate;
 U.navigate=async page=>{const out=await oldNavigate(page);setTimeout(stabilizeNav,0);return out};
 setTimeout(stabilizeNav,0);
 })();
+
+(()=>{
+  if(document.querySelector('script[data-workflow-polish]'))return;
+  const s=document.createElement('script');
+  s.src='/workflow-polish.js?v=20260909-26';
+  s.dataset.workflowPolish='1';
+  document.head.appendChild(s);
+})();
