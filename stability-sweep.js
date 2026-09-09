@@ -55,10 +55,37 @@ const syncSessionUi=()=>{
 if(app&&Native)new Native(syncSessionUi).observe(app,{attributes:true,attributeFilter:['hidden']});
 syncSessionUi();
 
+/* Una capa visual anterior podía volver a mover “Años” al final del menú. */
+const adminOrder=['admin-home','admin-dashboard','admin-search','admin-users','admin-courses','admin-subjects','admin-years','admin-communications','admin-statistics','admin-promotion','admin-exports','admin-audit','admin-history'];
+const adminGroups={
+  'admin-home':'Principal','admin-dashboard':'Principal','admin-search':'Principal',
+  'admin-users':'Gestión académica','admin-courses':'Gestión académica','admin-subjects':'Gestión académica','admin-years':'Gestión académica',
+  'admin-communications':'Comunidad','admin-statistics':'Seguimiento','admin-promotion':'Seguimiento','admin-exports':'Reportes','admin-audit':'Sistema','admin-history':'Sistema'
+};
+function normalizeAdminNav(){
+  if(U.state?.user?.role!=='admin'||U.state?.adminPreview)return;
+  const nav=document.querySelector('#nav');if(!nav)return;
+  nav.querySelectorAll('.ux-nav-group').forEach(x=>x.remove());
+  let anchor=nav.querySelector('.nav-title');
+  for(const page of adminOrder){const b=nav.querySelector(`[data-page="${page}"]`);if(!b)continue;if(anchor)anchor.after(b);anchor=b}
+  let last='';
+  for(const page of adminOrder){
+    const b=nav.querySelector(`[data-page="${page}"]`);if(!b)continue;
+    const group=adminGroups[page];
+    if(group&&group!==last){const h=document.createElement('div');h.className='ux-nav-group';h.textContent=group;b.before(h);last=group}
+  }
+}
+const scheduleNav=()=>{setTimeout(normalizeAdminNav,0);setTimeout(normalizeAdminNav,120)};
+const baseShell=U.renderShell;
+if(typeof baseShell==='function')U.renderShell=(...args)=>{const out=baseShell(...args);scheduleNav();return out};
+const baseNavigate=U.navigate;
+if(typeof baseNavigate==='function')U.navigate=async(...args)=>{const out=await baseNavigate(...args);scheduleNav();return out};
+scheduleNav();
+
 const toast=document.querySelector('#toast');
 if(toast){toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');toast.setAttribute('aria-atomic','true')}
 
-/* Evita dejar el scroll del documento bloqueado si la sesión cambia con un modal abierto. */
+/* Evita dejar un modal o la navegación móvil abiertos si la sesión cambia. */
 const baseReset=U.resetToLogin;
 if(typeof baseReset==='function')U.resetToLogin=(...args)=>{
   try{U.closeModal?.()}catch{}
