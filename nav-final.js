@@ -82,3 +82,16 @@ setTimeout(stabilizeNav,0);
   };
   wait();
 })();
+
+(()=>{
+  let tries=0;
+  const load=()=>{
+    if(document.querySelector('script[data-stability-sweep]'))return;
+    if(!document.getElementById('undosFinalConsistency')&&tries++<150){setTimeout(load,20);return}
+    const s=document.createElement('script');
+    s.src='/stability-sweep.js?v=20260909-28';
+    s.dataset.stabilitySweep='1';
+    document.head.appendChild(s);
+  };
+  load();
+})();
