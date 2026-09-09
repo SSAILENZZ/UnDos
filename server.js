@@ -40,6 +40,8 @@ app.use('/api/student',require('./routes-student-attendance'));
 app.use('/api/student',require('./routes-student'));
 app.use('/api/history',require('./routes-history'));
 app.get('/api/history',auth,async(_q,res)=>{try{const {rows}=await pool.query('SELECT id,year,active FROM academic_years ORDER BY year DESC');res.json({years:rows})}catch{res.status(500).json({error:'No se pudo cargar el historial'})}});
+app.all('/api/*',(_req,res)=>res.status(404).json({error:'Ruta de API no encontrada'}));
 app.get('/health',async(_q,res)=>{try{await pool.query('SELECT 1');res.type('text/plain').send('ok')}catch{res.status(503).type('text/plain').send('db unavailable')}});
+app.get(/^\/[^?]*\.(?:js|css|png|svg|ico)$/i,(_req,res)=>res.status(404).type('text/plain').send('Archivo no encontrado'));
 app.get('*',(_q,res)=>{res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');res.sendFile(path.join(__dirname,'index.html'))});
 (async()=>{for(let i=1;i<=20;i++){try{await initDatabase();app.listen(PORT,'0.0.0.0',()=>console.log(`UnDos listo en puerto ${PORT}`));return}catch(e){console.error(`DB intento ${i}/20:`,e.message);if(i===20)process.exit(1);await new Promise(r=>setTimeout(r,3000))}}})();
