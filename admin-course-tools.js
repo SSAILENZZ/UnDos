@@ -17,12 +17,19 @@ U.renderAdminCourses=async()=>{
     card.classList.add('course-admin-card');
     card.insertAdjacentHTML('beforeend',`<div class="course-admin-actions"><button type="button" class="btn small secondary" data-edit-course="${c.id}">Editar</button><button type="button" class="btn small danger" data-delete-course="${c.id}">Borrar</button></div>`);
   });
-  $('#content').addEventListener('click',async e=>{
-    const edit=e.target.closest('[data-edit-course]'),del=e.target.closest('[data-delete-course]');
-    if(edit){e.preventDefault();e.stopPropagation();const c=d.courses.find(x=>x.id===Number(edit.dataset.editCourse));if(c)openEdit(c);return}
-    if(del){e.preventDefault();e.stopPropagation();const c=d.courses.find(x=>x.id===Number(del.dataset.deleteCourse));if(!c)return;if(!confirm(`¿Borrar el curso “${c.name}”?\n\nSi aún tiene estudiantes activos matriculados, UnDos no permitirá borrarlo. Si solo contiene historial o clases antiguas, se archivará para conservar esos datos.`))return;del.disabled=true;try{const out=await U.api(`/api/admin/courses/${c.id}`,{method:'DELETE'});U.toast(out.message||'Curso eliminado');await U.renderAdminCourses()}catch(err){U.toast(err.message);del.disabled=false}}
-  });
 };
+
+const content=$('#content');
+if(content&&!content.dataset.courseToolsBound){
+  content.dataset.courseToolsBound='1';
+  content.addEventListener('click',async e=>{
+    const edit=e.target.closest('[data-edit-course]'),del=e.target.closest('[data-delete-course]');
+    const d=S.admin;
+    if(edit){e.preventDefault();e.stopPropagation();const c=d?.courses?.find(x=>x.id===Number(edit.dataset.editCourse));if(c)openEdit(c);return}
+    if(del){e.preventDefault();e.stopPropagation();const c=d?.courses?.find(x=>x.id===Number(del.dataset.deleteCourse));if(!c)return;if(!confirm(`¿Borrar el curso “${c.name}”?\n\nSi aún tiene estudiantes activos matriculados, UnDos no permitirá borrarlo. Si solo contiene historial o clases antiguas, se archivará para conservar esos datos.`))return;del.disabled=true;try{const out=await U.api(`/api/admin/courses/${c.id}`,{method:'DELETE'});U.toast(out.message||'Curso eliminado');await U.renderAdminCourses()}catch(err){U.toast(err.message);del.disabled=false}}
+  });
+}
+
 function openEdit(c){
   U.openModal('Editar curso',`<form id="editCourseForm" class="stack"><div class="field"><label>Nombre del curso</label><input name="name" value="${U.esc(c.name)}" required></div><div class="field"><label>Orden en la lista</label><input name="levelOrder" type="number" value="${Number(c.level_order??c.levelOrder??0)}"></div><p class="course-delete-hint">Cambiar el nombre no afecta las notas, asistencia ni el historial ya guardado.</p><div class="form-actions"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn primary">Guardar cambios</button></div></form>`);
   const f=$('#editCourseForm');f.onsubmit=async e=>{e.preventDefault();const x=new FormData(f),btn=f.querySelector('.btn.primary');if(btn){btn.disabled=true;btn.textContent='Guardando…'}try{await U.api(`/api/admin/courses/${c.id}`,{method:'PATCH',body:{name:x.get('name'),levelOrder:Number(x.get('levelOrder'))}});U.closeModal();U.toast('Curso actualizado');await U.renderAdminCourses()}catch(err){U.toast(err.message);if(btn){btn.disabled=false;btn.textContent='Guardar cambios'}}};const close=$('[data-close]');if(close)close.onclick=U.closeModal;
