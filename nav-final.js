@@ -27,71 +27,37 @@ function stabilizeNav(){
     for(const page of wanted){
       const btn=nav.querySelector(`[data-page="${page}"]`);if(!btn)continue;
       const group=groups[S.user.role]?.[page]||'';
-      if(group&&group!==lastGroup){
-        const h=document.createElement('div');h.className='ux-nav-group';h.textContent=group;btn.before(h);lastGroup=group;
-      }
+      if(group&&group!==lastGroup){const h=document.createElement('div');h.className='ux-nav-group';h.textContent=group;btn.before(h);lastGroup=group}
       btn.setAttribute('aria-current',S.page===page?'page':'false');
     }
-  }finally{
-    if(observer&&nav.isConnected)observer.observe(nav,{childList:true,subtree:false});
-  }
+  }finally{if(observer&&nav.isConnected)observer.observe(nav,{childList:true,subtree:false})}
 }
-function closeMobileMenu(){
-  const side=$('.sidebar'),toggle=$('#mobileNavToggle');
-  if(!side)return;side.classList.remove('mobile-nav-open');
-  if(toggle){toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','Abrir menú');toggle.textContent='☰'}
-}
-
-document.addEventListener('click',e=>{
-  if(S.adminPreview)return;
-  const btn=e.target.closest('#nav [data-page]');if(!btn)return;
-  const page=btn.dataset.page;if(!page||typeof U.navigate!=='function')return;
-  e.preventDefault();e.stopImmediatePropagation();
-  U.navigate(page);
-  if(window.matchMedia('(max-width:820px)').matches)closeMobileMenu();
-},true);
-
-const nav=$('#nav');
-if(nav&&Native){observer=new Native(()=>setTimeout(stabilizeNav,0));observer.observe(nav,{childList:true,subtree:false})}
-const oldShell=U.renderShell;
-U.renderShell=()=>{oldShell();setTimeout(stabilizeNav,0)};
-const oldNavigate=U.navigate;
-U.navigate=async page=>{const out=await oldNavigate(page);setTimeout(stabilizeNav,0);return out};
+function closeMobileMenu(){const side=$('.sidebar'),toggle=$('#mobileNavToggle');if(!side)return;side.classList.remove('mobile-nav-open');if(toggle){toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','Abrir menú');toggle.textContent='☰'}}
+document.addEventListener('click',e=>{if(S.adminPreview)return;const btn=e.target.closest('#nav [data-page]');if(!btn)return;const page=btn.dataset.page;if(!page||typeof U.navigate!=='function')return;e.preventDefault();e.stopImmediatePropagation();U.navigate(page);if(window.matchMedia('(max-width:820px)').matches)closeMobileMenu()},true);
+const nav=$('#nav');if(nav&&Native){observer=new Native(()=>setTimeout(stabilizeNav,0));observer.observe(nav,{childList:true,subtree:false})}
+const oldShell=U.renderShell;U.renderShell=()=>{oldShell();setTimeout(stabilizeNav,0)};
+const oldNavigate=U.navigate;U.navigate=async page=>{const out=await oldNavigate(page);setTimeout(stabilizeNav,0);return out};
 setTimeout(stabilizeNav,0);
 })();
 
 (()=>{
   const loadFinal=()=>{
     if(document.querySelector('script[data-final-consistency]'))return;
-    const f=document.createElement('script');
-    f.src='/final-consistency.js?v=20260909-27';
-    f.dataset.finalConsistency='1';
-    document.head.appendChild(f);
+    const f=document.createElement('script');f.src='/final-consistency.js?v=20260909-27';f.dataset.finalConsistency='1';document.head.appendChild(f);
   };
   let s=document.querySelector('script[data-workflow-polish]');
-  if(!s){
-    s=document.createElement('script');
-    s.src='/workflow-polish.js?v=20260909-26';
-    s.dataset.workflowPolish='1';
-    document.head.appendChild(s);
-  }
-  let tries=0;
-  const wait=()=>{
-    if(document.getElementById('undosWorkflowPolish')||tries++>100){loadFinal();return}
-    setTimeout(wait,20);
-  };
-  wait();
+  if(!s){s=document.createElement('script');s.src='/workflow-polish.js?v=20260909-26';s.dataset.workflowPolish='1';document.head.appendChild(s)}
+  let tries=0;const wait=()=>{if(document.getElementById('undosWorkflowPolish')||tries++>100){loadFinal();return}setTimeout(wait,20)};wait();
 })();
 
 (()=>{
   let tries=0;
-  const load=()=>{
-    if(document.querySelector('script[data-stability-sweep]'))return;
-    if(!document.getElementById('undosFinalConsistency')&&tries++<150){setTimeout(load,20);return}
-    const s=document.createElement('script');
-    s.src='/stability-sweep.js?v=20260909-28';
-    s.dataset.stabilitySweep='1';
-    document.head.appendChild(s);
-  };
+  const load=()=>{if(document.querySelector('script[data-stability-sweep]'))return;if(!document.getElementById('undosFinalConsistency')&&tries++<150){setTimeout(load,20);return}const s=document.createElement('script');s.src='/stability-sweep.js?v=20260909-28';s.dataset.stabilitySweep='1';document.head.appendChild(s)};
+  load();
+})();
+
+(()=>{
+  let tries=0;
+  const load=()=>{if(document.querySelector('script[data-post-review-fixes]'))return;if(!document.getElementById('undosStabilitySweep')&&tries++<150){setTimeout(load,20);return}const s=document.createElement('script');s.src='/post-review-fixes.js?v=20260909-29';s.dataset.postReviewFixes='1';document.head.appendChild(s)};
   load();
 })();
